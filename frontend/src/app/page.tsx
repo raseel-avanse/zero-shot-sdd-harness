@@ -17,7 +17,7 @@ import ProfileCard from '@/components/ProfileCard'
 import QuestionBox from '@/components/QuestionBox'
 import AnswerCard, { type HistoryItem } from '@/components/AnswerCard'
 import SessionPicker from '@/components/SessionPicker'
-import { SourceStubs } from '@/components/Stubs'
+import SourcePicker from '@/components/SourcePicker'
 
 interface Dataset {
   id: string
@@ -210,6 +210,8 @@ export default function Home() {
       <div className="space-y-6">
         <UploadZone onUploaded={onUploaded} onUploadStart={onUploadStart} />
 
+        <SourcePicker onUploaded={onUploaded} onUploadStart={onUploadStart} />
+
         <SessionPicker
           sessions={sessions}
           activeSessionId={sessionId}
@@ -243,8 +245,6 @@ export default function Home() {
             </p>
           </div>
         )}
-
-        <SourceStubs />
 
         <QuestionBox disabled={!dataset || !dataframeLoaded} running={running} onAsk={onAsk} />
 

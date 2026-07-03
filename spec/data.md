@@ -47,6 +47,8 @@ One row per question asked (one agent run). This is the persistent query log in 
 | created_at | datetime | yes | Run start |
 | completed_at | datetime | no | Run end |
 
+> **Phase 3 (no new tables):** datasets loaded from a Google Sheet or a JSON-API endpoint are stored in the **same** in-memory dataframe store and produce the **same** `Session` (its `title` reflects the source, e.g. "Google Sheet abc123" or the JSON URL) + `runs` turns as a CSV. `profile_snapshot` is captured identically at ingest. There is no source-type column; the source is only reflected in the derived title.
+
 ### Entity: DatasetProfile (in-memory only, not persisted)
 Held in the in-process dataframe registry keyed by `dataset_id`; documented here for coherence, not a DB table.
 

@@ -149,6 +149,41 @@ export async function uploadDataset(file: File): Promise<UploadResult> {
   return unwrap<UploadResult>(res)
 }
 
+// Load a dataset from a public Google Sheet share URL. Returns the SAME
+// UploadResult shape as uploadDataset, so all downstream UI is reused.
+export async function loadGoogleSheet(url: string): Promise<UploadResult> {
+  let res: Response
+  try {
+    res = await fetch('/api/datasets/from-google-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+  } catch {
+    throw new ApiCallError('NETWORK', 'Network error — is the server running?')
+  }
+  return unwrap<UploadResult>(res)
+}
+
+// Load a dataset from a JSON API URL. Optional recordsPath (e.g. "data.items")
+// points at the array of records. Returns the SAME UploadResult shape.
+export async function loadJsonApi(url: string, recordsPath?: string): Promise<UploadResult> {
+  const payload: { url: string; records_path?: string } = { url }
+  const trimmed = recordsPath?.trim()
+  if (trimmed) payload.records_path = trimmed
+  let res: Response
+  try {
+    res = await fetch('/api/datasets/from-json-api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new ApiCallError('NETWORK', 'Network error — is the server running?')
+  }
+  return unwrap<UploadResult>(res)
+}
+
 export async function askQuestion(datasetId: string, question: string): Promise<AnswerResult> {
   let res: Response
   try {

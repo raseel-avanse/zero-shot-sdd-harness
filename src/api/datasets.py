@@ -17,6 +17,9 @@ from domain.sessions import (
     resolve_session_for_dataset,
     touch_session,
 )
+from domain.sources import SourceError
+from domain.sources.json_api import fetch_json_api
+from domain.sources.sheets import fetch_google_sheet
 from graph.runner import (
     run_ask,
     DatasetNotFound,
@@ -31,6 +34,43 @@ _log = get_logger("api")
 
 class AskRequest(BaseModel):
     question: str
+
+
+class GoogleSheetRequest(BaseModel):
+    url: str
+
+
+class JsonApiRequest(BaseModel):
+    url: str
+    records_path: str | None = None
+
+
+def _ingest_dataframe(df: pd.DataFrame, title: str) -> dict:
+    """Shared convergence point for ALL sources (CSV / Sheets / JSON).
+
+    Build profile + sample, store the in-memory dataframe, create a new session
+    (snapshotting the profile), and return the pinned
+    ``{session_id, dataset_id, profile}`` envelope — byte-for-byte identical
+    regardless of source, so every downstream (ask / replay / sessions) is
+    unchanged.
+    """
+    profile = build_profile(df)
+    sample = build_sample(df)
+    dataset_id = get_store().add(df, profile, sample)
+
+    with create_db_session() as session:
+        session_id = create_session(
+            session, dataset_id=dataset_id, title=title, profile=profile
+        )
+
+    _log.info(
+        "ingest_dataframe",
+        dataset_id=dataset_id,
+        session_id=session_id,
+        rows=profile["row_count"],
+        title=title,
+    )
+    return ok({"session_id": session_id, "dataset_id": dataset_id, "profile": profile})
 
 
 @router.post("/datasets")
@@ -56,24 +96,28 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
     if df.shape[1] == 0 or df.shape[0] == 0:
         raise api_error("PARSE_FAILED", "CSV has no data rows/columns.", 400)
 
-    profile = build_profile(df)
-    sample = build_sample(df)
-    dataset_id = get_store().add(df, profile, sample)
+    # Phase 2+3: converge on the shared ingest path (session + profile + store).
+    return _ingest_dataframe(df, filename)
 
-    # Phase 2: each upload starts a new session and snapshots the profile so
-    # history can render after the in-memory dataframe is evicted.
-    with create_db_session() as session:
-        session_id = create_session(
-            session, dataset_id=dataset_id, title=filename, profile=profile
-        )
 
-    _log.info(
-        "upload_dataset",
-        dataset_id=dataset_id,
-        session_id=session_id,
-        rows=profile["row_count"],
-    )
-    return ok({"session_id": session_id, "dataset_id": dataset_id, "profile": profile})
+@router.post("/datasets/from-google-sheet")
+def load_google_sheet(req: GoogleSheetRequest) -> dict:
+    """Phase 3: load a public Google Sheet URL → same shape as CSV upload."""
+    try:
+        df, title = fetch_google_sheet(req.url)
+    except SourceError as exc:
+        raise api_error(exc.code, exc.detail, exc.status)
+    return _ingest_dataframe(df, title)
+
+
+@router.post("/datasets/from-json-api")
+def load_json_api(req: JsonApiRequest) -> dict:
+    """Phase 3: load a JSON-API endpoint → same shape as CSV upload."""
+    try:
+        df, title = fetch_json_api(req.url, req.records_path)
+    except SourceError as exc:
+        raise api_error(exc.code, exc.detail, exc.status)
+    return _ingest_dataframe(df, title)
 
 
 @router.post("/datasets/{dataset_id}/ask")

@@ -16,10 +16,24 @@ test('golden path: upload, ask with shown work, chart, persist, follow-up contex
   const fontWeight = await heading.evaluate(el => getComputedStyle(el).fontWeight)
   expect(Number(fontWeight)).toBeGreaterThanOrEqual(600)
 
-  // At least one stub button is present and disabled ("Coming soon" — a future feature, not a bug).
-  const stubs = page.getByTestId('stub-button')
-  await expect(stubs.first()).toBeVisible()
-  await expect(stubs.first()).toBeDisabled()
+  // Phase 3: the Google Sheets + JSON API sources are now REAL enabled forms
+  // (inputs + Load buttons), replacing the old disabled stubs. We do NOT perform
+  // a real Sheet/JSON network load here (that needs external network and flakes);
+  // the load plumbing is covered offline by the backend tests.
+  await expect(page.getByTestId('sheet-url-input')).toBeEnabled()
+  await expect(page.getByTestId('json-url-input')).toBeEnabled()
+  await expect(page.getByTestId('records-path-input')).toBeEnabled()
+  // Load buttons are present; they enable once a URL is typed.
+  await expect(page.getByTestId('sheet-load-button')).toBeVisible()
+  await expect(page.getByTestId('json-load-button')).toBeVisible()
+  await page.getByTestId('sheet-url-input').fill('https://docs.google.com/spreadsheets/d/example')
+  await expect(page.getByTestId('sheet-load-button')).toBeEnabled()
+  await page.getByTestId('sheet-url-input').fill('')
+
+  // "Live database" remains a disabled "Coming soon" Phase-4 stub.
+  const liveDbStub = page.getByTestId('stub-button').filter({ hasText: 'Live database' })
+  await expect(liveDbStub).toBeVisible()
+  await expect(liveDbStub).toBeDisabled()
 
   // Upload the fixture CSV; the profile appears (creates a fresh session, local profiling).
   await page.getByTestId('file-input').setInputFiles(FIXTURE)

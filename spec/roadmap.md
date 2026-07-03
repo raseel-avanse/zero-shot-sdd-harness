@@ -65,14 +65,15 @@ Replaces the write-pandas-yourself / spin-up-a-notebook loop for quick questions
 
 ### Phase 3 — Additional data sources (Google Sheets / JSON API)
 
-- **Goal:** Load a dataset from a Google Sheet URL or a JSON-API endpoint (not just CSV upload), then analyze it identically.
-- **Capabilities:** (1) Google Sheets ingest → dataframe + profile; (2) JSON-API ingest → dataframe + profile; (3) unified source picker replacing the Phase-1 stub.
+- **Goal:** Load a dataset from a Google Sheet URL or a JSON-API endpoint (not just CSV upload), then analyze it **identically** to a CSV — the loaded dataset flows through the SAME profile → ask → answer → session path from Phases 1–2 (no separate analysis code path).
+- **Capabilities:** (1) Google Sheets ingest → dataframe + profile; (2) JSON-API ingest → dataframe + profile; (3) unified source picker replacing the Phase-1 stub buttons. See [../spec/capabilities/data-sources.md](capabilities/data-sources.md).
 - **Independent slices:**
-  - `backend` (deps: Phase 1 dataframe store) — source adapters that produce the same in-memory dataframe + profile; new ingest endpoints. Owns `src/domain/sources/`, `src/api/datasets.py`, `tests/`.
-  - `frontend` (deps: ingest API contract) — wire the "Connect Google Sheets / JSON API" stubs into real forms. Owns `frontend/`.
-- **Key files:** `src/domain/sources/{sheets,json_api}.py`, `frontend/src/components/SourcePicker.tsx`.
-- **Gate command:** `uv run pytest tests/test_sources.py` (real fetch against a fixture Sheet/endpoint) + `cd frontend && pnpm build && pnpm exec playwright test e2e/sources.spec.ts`.
-- **How the user tests it:** Click "Connect Google Sheets", paste a share URL → profile card appears → ask a question exactly as with a CSV.
+  - `backend` (deps: Phase 1 dataframe store) — `sheets` + `json_api` source adapters that fetch remote data and return a dataframe + derived title, converging on the SAME create-session/build-profile/store-dataframe logic as `POST /api/datasets`; two new ingest endpoints. Owns `src/domain/sources/`, `src/api/datasets.py`, `src/settings.py` (add `AGENT_FETCH_TIMEOUT_S`), `tests/`.
+  - `frontend` (deps: **ingest API contract pinned in [api.md](api.md)** — buildable in parallel) — wire the "Connect Google Sheets" / "Connect JSON API" stub buttons into real forms; on success reuse the exact same downstream (ProfileCard → QuestionBox → AnswerCard → sessions). Owns `frontend/`.
+- **Key files:** `src/domain/sources/{sheets,json_api}.py`, `src/api/datasets.py` (`POST /api/datasets/from-google-sheet`, `POST /api/datasets/from-json-api`), `frontend/src/components/SourcePicker.tsx`.
+- **Gate command:** `uv run pytest` + `cd frontend && pnpm build && pnpm exec playwright test`.
+- **Lean-gate policy (Phase 3):** the mandatory real-Gemini floor is **unchanged** (~4 live tests from Phases 1–2) — do NOT add new live-Gemini tests. All source-loading plumbing (Sheets-URL id/gid parsing, sheet→dataframe, JSON→dataframe normalization for all four rules, and the full error taxonomy incl. `SHEET_NOT_ACCESSIBLE`/`NO_TABULAR_DATA`/`FETCH_FAILED` timeout) is tested against **deterministic fakes / local fixtures with NO network** (monkeypatch the HTTP fetch to return fixture bytes/JSON, HTML-login, timeout). E2E stays ONE consolidated Playwright spec — at most assert one new-source load within it.
+- **How the user tests it:** Click "Connect Google Sheets", paste a public share URL (shared "anyone with the link") → profile card appears → ask a question exactly as with a CSV. Try "Connect JSON API" with a URL returning an array of records → same result. A private sheet shows a clear "share as anyone with the link" error, not a crash.
 
 ### Phase 4 — Live database connection
 

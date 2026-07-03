@@ -37,48 +37,52 @@ Frontend static export is mounted at `/app`; API is under `/api`.
 | 400 `UNSUPPORTED_TYPE` | Non-CSV extension (Sheets/JSON/DB are later phases) |
 | 413 `FILE_TOO_LARGE` | Exceeds `AGENT_MAX_UPLOAD_MB` |
 
-### `POST /api/datasets/sheets` (Phase 3)
-**Purpose:** Load a dataset from a public Google Sheets URL, profile it, hold the dataframe in-process — behaving **identically** to a CSV upload. See [load-from-source.md](capabilities/load-from-source.md).
+### `POST /api/datasets/from-google-sheet` (Phase 3)
+**Purpose:** Load a dataset from a **public** Google Sheets URL, profile it, hold the dataframe in-process — behaving **identically** to a CSV upload. See [data-sources.md](capabilities/data-sources.md).
 
 **Request:** `application/json`
 ```json
 { "url": "https://docs.google.com/spreadsheets/d/<id>/edit#gid=<gid>" }
 ```
-The server extracts the spreadsheet id (and `gid` if present, else `0`), builds the CSV export URL `https://docs.google.com/spreadsheets/d/<id>/export?format=csv&gid=<gid>`, fetches it, and parses it with the **same** `pandas.read_csv` path as `POST /api/datasets`.
+The server extracts the spreadsheet `<id>` (and `gid` if present, else `0`), builds the public CSV-export URL `https://docs.google.com/spreadsheets/d/<id>/export?format=csv&gid=<gid>`, does a plain HTTP `GET` (**no API key, no OAuth**), and parses the body with the **same** `pandas.read_csv` path as `POST /api/datasets`. Works for sheets shared "anyone with the link can view". PRIVATE sheets are **out of scope**: an auth-gated sheet returns Google's HTML login page instead of CSV, which surfaces as `SHEET_NOT_ACCESSIBLE`.
 
-**Response (`ok`):** the **exact same shape** as `POST /api/datasets` — `{ "session_id", "dataset_id", "profile" }`, same profile shape, same session-creation-on-ingest (Phase 2 `create_session`). `title` = a derived name (`"Google Sheet <id>"`) so history renders. The resulting in-memory dataframe is indistinguishable from a CSV upload, so `POST /api/datasets/{dataset_id}/ask` works identically.
+**Response (`ok`):** **byte-for-byte the same shape** as `POST /api/datasets` — `{ "session_id", "dataset_id", "profile" }`, same profile shape, same session-creation-on-ingest (Phase 2 `create_session`) and `profile_snapshot` capture. `title` = a derived name (`"Google Sheet <short-id>"`). The resulting in-memory dataframe is indistinguishable from a CSV upload, so `/ask`, `/api/sessions`, and replay are **all unchanged**.
 
 **Error cases:**
 | Status / code | Condition |
 |--------|-----------|
-| 422 `INVALID_URL` | `url` missing/blank, or not a parseable Google Sheets URL (no extractable spreadsheet id) |
-| 400 `FETCH_FAILED` | Network/HTTP error or non-200 from Google (e.g. sheet not shared publicly / requires auth) |
-| 400 `PARSE_FAILED` | Fetched content is not parseable as CSV/tabular |
-| 400 `EMPTY_DATASET` | Parsed dataframe has zero rows or zero columns |
+| 400 `INVALID_SHEET_URL` | `url` missing/blank, or not a parseable Google Sheets URL (no extractable spreadsheet id) |
+| 400 `SHEET_NOT_ACCESSIBLE` | Fetch returned non-CSV (HTML/login page) — sheet is not shared publicly; error tells the user to share it as "anyone with the link" |
+| 400 `PARSE_FAILED` | Fetched content is CSV-shaped but `pandas.read_csv` failed / yielded zero rows or columns |
+| 502 `FETCH_FAILED` | Network error, timeout (`AGENT_FETCH_TIMEOUT_S`), or non-200 HTTP status |
 | 413 `FILE_TOO_LARGE` | Fetched bytes exceed `AGENT_MAX_UPLOAD_MB` |
 
-### `POST /api/datasets/json` (Phase 3)
-**Purpose:** Load a dataset from a JSON-API endpoint, normalize it to a dataframe, profile it, hold it in-process — behaving **identically** to a CSV upload. See [load-from-source.md](capabilities/load-from-source.md).
+### `POST /api/datasets/from-json-api` (Phase 3)
+**Purpose:** Load a dataset from a JSON-API endpoint, normalize it to a dataframe, profile it, hold it in-process — behaving **identically** to a CSV upload. See [data-sources.md](capabilities/data-sources.md).
 
 **Request:** `application/json`
 ```json
 { "url": "https://api.example.com/records", "records_path": "data.items" }
 ```
-- `url` — the JSON endpoint to `GET`.
-- `records_path` — optional dot-path (e.g. `"data.items"`) selecting the nested array of record objects to normalize. When `null`/omitted, the **top-level** JSON value must itself be a list of objects. The array is passed to `pandas.json_normalize` to produce the dataframe.
+- `url` — the HTTP(S) JSON endpoint to `GET`.
+- `records_path` — optional dot-path (e.g. `"data.items"`) selecting the nested array of record objects. Normalization rules (see [data-sources.md](capabilities/data-sources.md)):
+  1. If `records_path` is given, resolve it to the array and `pd.DataFrame(records)`.
+  2. Else if the top-level JSON is an **array of objects** → `pd.DataFrame(records)`.
+  3. Else if the top-level is an **object with a single array-valued key** → use that array.
+  4. Else fall back to `pd.json_normalize(body)`.
 
-**Response (`ok`):** the **exact same shape** as `POST /api/datasets` — `{ "session_id", "dataset_id", "profile" }`, same session-creation-on-ingest. `title` = a derived name (the `url`). The resulting dataframe is indistinguishable from a CSV upload, so `/ask` works identically.
+**Response (`ok`):** **byte-for-byte the same shape** as `POST /api/datasets` — `{ "session_id", "dataset_id", "profile" }`, same session-creation-on-ingest and `profile_snapshot` capture. `title` = a derived name (the URL host/path). The dataframe is indistinguishable from a CSV upload, so `/ask`, `/api/sessions`, and replay are unchanged.
 
 **Error cases:**
 | Status / code | Condition |
 |--------|-----------|
-| 422 `INVALID_URL` | `url` missing/blank/malformed |
-| 400 `FETCH_FAILED` | Network/HTTP error or non-200 from the source |
-| 400 `PARSE_FAILED` | Body is not valid JSON, `records_path` does not resolve to a list, or (when `records_path` is null) the top-level value is not a list of objects |
-| 400 `EMPTY_DATASET` | Normalized dataframe has zero rows or zero columns |
+| 400 `INVALID_URL` | `url` missing/blank/malformed |
+| 400 `JSON_PARSE_FAILED` | Response body is not valid JSON |
+| 400 `NO_TABULAR_DATA` | Could not resolve an array of records / `json_normalize` failed / result has zero rows or columns |
+| 502 `FETCH_FAILED` | Network error, timeout (`AGENT_FETCH_TIMEOUT_S`), or non-200 HTTP status |
 | 413 `FILE_TOO_LARGE` | Fetched bytes exceed `AGENT_MAX_UPLOAD_MB` |
 
-> **Trust boundary (noted, not built):** both endpoints fetch an arbitrary user-supplied URL server-side (an SSRF surface — a URL could point at localhost/metadata endpoints). Acceptable here **only** because this is a single-user, locally-run, non-exposed tool (same trust boundary as un-sandboxed code execution — see [architecture.md](architecture.md#trust-boundary-local-code-execution)). No SSRF allow-listing is built in Phase 3.
+> **Trust boundary (noted, not built):** both endpoints fetch an arbitrary user-supplied URL server-side (an SSRF surface — a URL could point at localhost/metadata endpoints). Acceptable here **only** because this is a single-user, locally-run, non-exposed tool (same trust boundary as un-sandboxed code execution — see [architecture.md](architecture.md#trust-boundary-local-code-execution)). No SSRF allow-listing is built in Phase 3. Fetches are bounded by `AGENT_FETCH_TIMEOUT_S` (default 15s) and the `AGENT_MAX_UPLOAD_MB` size cap on the fetched bytes.
 
 ### `POST /api/datasets/{dataset_id}/ask`
 **Purpose:** Ask a question against a loaded dataset. Drives the agent graph. See [ask-question.md](capabilities/ask-question.md).

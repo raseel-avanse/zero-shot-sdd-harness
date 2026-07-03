@@ -30,6 +30,7 @@ FastAPI  ── mounts ─►  frontend/out (static export at /app)
 |-------|----------------|
 | API (`src/api/`) | Upload, ask, health endpoints; `ok()`/`api_error()` envelope |
 | Dataframe store (`src/domain/`) | In-process dataframe registry keyed by `dataset_id`; profiling |
+| Source adapters (`src/domain/sources/`, Phase 3) | `sheets` + `json_api` adapters fetch remote data and return a dataframe + a derived title, converging on the **same** profile/session-creation logic as CSV upload (no separate analysis path) |
 | Agent graph (`src/graph/`) | LangGraph: profile → write-code → execute → self-correct → synthesize → chart → finalize |
 | Local executor (`src/graph/`) | Runs generated pandas code against the dataframe, captures tracebacks |
 | LLM (`src/llm/`) | Gemini provider (already wired); usage-token reporting |
@@ -50,6 +51,7 @@ FastAPI  ── mounts ─►  frontend/out (static export at /app)
 - No authentication is implemented (single local user) — see [api.md](api.md#authentication).
 - Execution is bounded by an attempt cap and a per-execution wall-clock timeout (`AGENT_CODE_TIMEOUT_S`, default 15) to prevent runaway loops.
 - Generated code runs with the same privileges as the server process. Do not run this on a shared or production host with sensitive data.
+- **Phase 3 remote fetch:** the Sheets/JSON source adapters `GET` an arbitrary user-supplied URL server-side (an SSRF surface). Accepted within this same single-trusted-user boundary — **no blocklist is built**. Fetches are bounded by `AGENT_FETCH_TIMEOUT_S` (default 15) and the `AGENT_MAX_UPLOAD_MB` byte cap.
 
 ## External Dependencies
 
@@ -57,6 +59,7 @@ FastAPI  ── mounts ─►  frontend/out (static export at /app)
 |------------|---------|--------------|
 | Gemini API (`gemini-2.5-flash`) | Write pandas code, synthesize answers, build chart specs | Retry/backoff in LLM client; surfaced as `api_error` if unavailable |
 | Local filesystem | Query log file, SQLite DB, uploaded temp file | Log + degrade (query log); fatal for DB |
+| Remote HTTP source (Phase 3: Google Sheets CSV export, user JSON endpoint) | Fetch a dataset from a public URL | Bounded by `AGENT_FETCH_TIMEOUT_S`; surfaced as `FETCH_FAILED`/`SHEET_NOT_ACCESSIBLE` (see [api.md](api.md)) |
 
 ## Stack
 
