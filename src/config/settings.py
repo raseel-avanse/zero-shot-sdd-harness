@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     code_timeout_s: int = Field(default=15)
     query_log_path: str = Field(default="data/queries.log")
     max_datasets: int = Field(default=16)
+    history_turns: int = Field(default=3)
 
 
 _settings: Settings | None = None

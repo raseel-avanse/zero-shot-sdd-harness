@@ -148,12 +148,26 @@ Once running, open `http://localhost:8001/app` for the UI (when the frontend is 
 
 | Method / path | What |
 |---------------|------|
-| `POST /api/datasets` | Upload a CSV (`multipart/form-data`, field `file`) → returns `{dataset_id, profile}` |
-| `POST /api/datasets/{dataset_id}/ask` | Body `{"question": "..."}` → the answer-card contract (answer, method note, executed code, result, chart spec, token usage, attempts, step trace) |
+| `POST /api/datasets` | Upload a CSV (`multipart/form-data`, field `file`) → returns `{session_id, dataset_id, profile}`. Each upload starts a new **session** and snapshots the profile |
+| `POST /api/datasets/{dataset_id}/ask` | Body `{"question": "..."}` → the answer-card contract (answer, method note, executed code, result, chart spec, token usage, attempts, step trace) plus `session_id`. Prior turns of the session are injected as context so follow-ups ("now break that down by region") resolve against them |
+| `GET /api/sessions` | List sessions, most recent first: `{session_id, title, dataset_id, profile_summary, turn_count, created_at, updated_at, dataframe_loaded}` |
+| `GET /api/sessions/{session_id}` | Replay a session: `{session_id, title, dataset_id, dataframe_loaded, profile, turns[]}` where each turn carries every answer-card key plus `question`, `created_at`, `status` |
 | `GET /api/health` | Liveness → `{"ok": true, "data": {"status": "healthy"}}` |
 
 Every response uses the envelope `{"ok": true, "data": {...}}` on success and
 `{"ok": false, "error": {"code", "detail"}}` on error.
+
+### Sessions & history (Phase 2)
+
+Conversation history is persisted per session in SQLite, so it survives page
+reload and process restart. A session's uploaded **dataframe is held in memory
+only** — after a process restart or LRU eviction the dataframe is gone
+(`dataframe_loaded: false` in `GET /api/sessions`): history still renders from the
+stored `profile_snapshot`, but asking a new question against the evicted dataset
+returns `DATASET_NOT_FOUND` (404) — re-upload the CSV to continue the session.
+The agent injects the last `AGENT_HISTORY_TURNS` (default 3) completed turns
+(question + method note + executed code, compact) into the `write_code` and
+`synthesize` prompts so follow-ups resolve against prior turns.
 
 ### Tests
 

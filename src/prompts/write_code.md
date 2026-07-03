@@ -14,3 +14,9 @@ Rules for the `code` string:
 - Use the exact column names shown in the profile.
 - Keep it to a few lines. Separate multiple statements with "\n".
   `result` may be a scalar, Series, or DataFrame.
+
+The user prompt may include an optional "Recent conversation" block listing the
+last few question/method/code turns. When the current question is a follow-up
+(e.g. "now break that down by region", "and by month?"), resolve the referent
+("that", "it") against the most recent prior turn's question and code — extend or
+re-scope that computation rather than starting from scratch.

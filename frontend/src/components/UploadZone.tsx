@@ -5,6 +5,10 @@ import { uploadDataset, ApiCallError, type UploadResult } from '@/lib/api'
 
 interface Props {
   onUploaded: (result: UploadResult, fileName: string) => void
+  // Fired synchronously the instant a file is chosen, before the async upload —
+  // lets the page register user intent so an in-flight session restore cannot
+  // land on top of the upload.
+  onUploadStart?: () => void
 }
 
 function humanSize(bytes: number): string {
@@ -13,7 +17,7 @@ function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
-export default function UploadZone({ onUploaded }: Props) {
+export default function UploadZone({ onUploaded, onUploadStart }: Props) {
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,6 +25,7 @@ export default function UploadZone({ onUploaded }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
+    onUploadStart?.()
     setError(null)
     setLoading(true)
     setCurrent({ name: file.name, size: file.size })

@@ -122,7 +122,7 @@ export default function AnswerCard({ item }: Props) {
 
           <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
             <TokenBadge {...result.token_usage} />
-            <StepStatus inFlight={false} trace={result.step_trace} attempts={result.attempts} />
+            <StepStatus inFlight={false} trace={result.step_trace ?? null} attempts={result.attempts} />
             <div className="ml-auto">
               <StubButton label="Export dataset" phase="Phase 5" />
             </div>

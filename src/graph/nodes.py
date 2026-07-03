@@ -5,8 +5,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import select
+
 from config.settings import get_settings
-from db.models import RunRow
+from db.models import RunRow, SessionRow
 from db.session import create_db_session
 from domain.dataset_store import get_store
 from graph.executor import execute_pandas
@@ -74,19 +76,76 @@ def _parse_json(text: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Conversation history (Phase 2)
+# --------------------------------------------------------------------------- #
+
+def _load_history(session_id: str | None, limit: int) -> list[dict]:
+    """Load the last `limit` COMPLETED turns of a session, oldest-first, as a
+    compact list of {question, method_note, executed_code}. Never includes the
+    full result_repr (keeps token spend low). See spec/agent.md § Memory."""
+    if not session_id or limit <= 0:
+        return []
+    with create_db_session() as session:
+        rows = (
+            session.execute(
+                select(RunRow)
+                .where(RunRow.session_id == session_id)
+                .where(RunRow.status == "completed")
+                .order_by(RunRow.created_at.desc(), RunRow.id.desc())
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        # Materialise fields inside the session — the ORM expires attributes on
+        # commit/close, so we must read them before the context exits.
+        history = [
+            {
+                "question": r.question,
+                "method_note": r.method_note,
+                "executed_code": r.executed_code,
+            }
+            for r in rows
+        ]
+    history.reverse()  # oldest-first for prompt coherence
+    return history
+
+
+def _history_block(history: list[dict] | None) -> str:
+    """Render the compact last-N-turns summary for injection into prompts.
+    Empty string when there is no history (prompt is then identical to Phase 1)."""
+    if not history:
+        return ""
+    lines = ["Recent conversation (most recent last), for resolving follow-up references:"]
+    for i, turn in enumerate(history, start=1):
+        lines.append(f"  Turn {i}:")
+        lines.append(f"    Question: {turn.get('question')}")
+        if turn.get("method_note"):
+            lines.append(f"    Method: {turn.get('method_note')}")
+        if turn.get("executed_code"):
+            lines.append(f"    Code: {turn.get('executed_code')}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
 # Nodes
 # --------------------------------------------------------------------------- #
 
 def node_init(state: AgentState) -> AgentState:
     dataset_id = state["dataset_id"]
     question = state["question"]
+    session_id = state.get("session_id")
     try:
         entry = get_store().get(dataset_id)
         if entry is None:
             return {**state, "error": "DATASET_NOT_FOUND"}
 
+        # Load prior turns BEFORE creating this run's row so we don't include self.
+        history = _load_history(session_id, get_settings().history_turns)
+
         with create_db_session() as session:
             run = RunRow(
+                session_id=session_id,
                 dataset_id=dataset_id,
                 question=question,
                 status="pending",
@@ -98,10 +157,17 @@ def node_init(state: AgentState) -> AgentState:
             session.flush()
             run_id = run.id
 
-        _log.info("node_init", run_id=run_id, dataset_id=dataset_id)
+        _log.info(
+            "node_init",
+            run_id=run_id,
+            dataset_id=dataset_id,
+            session_id=session_id,
+            history_turns=len(history),
+        )
         return {
             **state,
             "run_id": run_id,
+            "history": history,
             "profile": entry.profile,
             "sample": entry.sample,
             "attempts": 0,
@@ -127,6 +193,9 @@ def node_write_code(state: AgentState) -> AgentState:
             f"Profile: {json.dumps(profile)}",
             f"Sample:\n{state['sample']}",
         ]
+        hist = _history_block(state.get("history"))
+        if hist:
+            parts.append(hist)
         if state.get("last_traceback"):
             parts.append(
                 "Your previous code failed with this traceback. Fix it:\n"
@@ -194,10 +263,12 @@ def node_execute_code(state: AgentState) -> AgentState:
 def node_synthesize_answer(state: AgentState) -> AgentState:
     try:
         system = _load_prompt("synthesize.md")
+        hist = _history_block(state.get("history"))
         prompt = (
-            f"Question: {state['question']}\n\n"
-            f"Executed code:\n{state.get('code')}\n\n"
-            f"Computed result:\n{state.get('result_repr')}"
+            (f"{hist}\n\n" if hist else "")
+            + f"Question: {state['question']}\n\n"
+            + f"Executed code:\n{state.get('code')}\n\n"
+            + f"Computed result:\n{state.get('result_repr')}"
         )
         text, usage = LLMClient().call_model_with_usage(
             prompt, system=system, json_mode=True
@@ -248,8 +319,10 @@ def node_build_chart(state: AgentState) -> AgentState:
 def node_fallback_reason(state: AgentState) -> AgentState:
     try:
         system = _load_prompt("fallback.md")
+        hist = _history_block(state.get("history"))
         prompt = (
-            f"Question: {state['question']}\n\n"
+            (f"{hist}\n\n" if hist else "")
+            + f"Question: {state['question']}\n\n"
             f"Profile: {json.dumps(state['profile'])}\n\n"
             f"Sample:\n{state['sample']}\n\n"
             f"Last error:\n{state.get('last_traceback')}"

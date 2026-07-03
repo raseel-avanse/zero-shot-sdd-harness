@@ -57,9 +57,9 @@ Replaces the write-pandas-yourself / spin-up-a-notebook loop for quick questions
 - **Goal:** Ask many questions against the same loaded dataset with server-persisted conversation history that survives reload, and the agent uses prior turns as context.
 - **Capabilities:** (1) session-scoped conversation memory persisted in DB; (2) history reload/replay endpoint + UI; (3) follow-up questions that reference prior answers ("and by month?").
 - **Independent slices:**
-  - `backend` (deps: Phase 1 backend) — `Session` + `Turn` models + migration, session-scoped memory injected into `write_code`/`synthesize` prompts, list/replay endpoint. Owns `src/` + `alembic/` + `tests/`.
-  - `frontend` (deps: pinned session API contract) — history loads from server, session picker, follow-up handling. Owns `frontend/`.
-- **Key files:** `src/db/models.py` (Session, Turn), `src/api/sessions.py`, `src/graph/nodes.py` (context injection), `frontend/src/components/History.tsx`.
+  - `backend` (deps: Phase 1 backend) — `Session` model + `runs.session_id` FK + Alembic migration, session-scoped memory (last N=3 turns) injected into `write_code`/`synthesize` prompts via `node_init`, `GET /api/sessions` + `GET /api/sessions/{id}` list/replay endpoints, `session_id` added to `POST /api/datasets` + ask responses. Owns `src/` + `alembic/` + `tests/`.
+  - `frontend` (deps: pinned session API contract in [api.md](api.md)) — history loads from server on reload, session picker, follow-up handling, and the "re-upload to continue this session" state when `dataframe_loaded` is false. Owns `frontend/`.
+- **Key files:** `src/db/models.py` (Session; a Turn is a `runs` row), `src/api/sessions.py`, `src/graph/nodes.py` (context injection in `node_init`), `frontend/src/components/History.tsx`.
 - **Gate command:** `uv run alembic upgrade head && uv run pytest tests/test_sessions.py` + `cd frontend && pnpm build && pnpm exec playwright test e2e/session.spec.ts` (real Gemini via `.env`).
 - **How the user tests it:** Ask 3 questions, reload the page → history is still there; ask a follow-up ("and broken down by region?") → answer uses the prior context.
 

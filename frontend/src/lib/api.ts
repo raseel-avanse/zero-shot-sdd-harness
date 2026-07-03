@@ -17,6 +17,7 @@ export interface Profile {
 }
 
 export interface UploadResult {
+  session_id: string
   dataset_id: string
   profile: Profile
 }
@@ -53,6 +54,7 @@ export interface StepTraceEntry {
 
 export interface AnswerResult {
   run_id: number
+  session_id: string
   answer: string
   method_note: string
   executed_code: string
@@ -62,7 +64,46 @@ export interface AnswerResult {
   token_usage: TokenUsage
   attempts: number
   used_fallback: boolean
-  step_trace: StepTraceEntry[]
+  // Live-run telemetry only; omitted on replayed turns (GET /api/sessions/{id}).
+  step_trace?: StepTraceEntry[]
+}
+
+// A single persisted turn from GET /api/sessions/{session_id}.
+// Carries every answer-card key plus question/created_at/status; no step_trace.
+export interface SessionTurn {
+  run_id: number
+  question: string
+  created_at: string
+  answer: string
+  method_note: string
+  executed_code: string
+  result_repr: string
+  assumptions: string[]
+  chart_spec: ChartSpec | null
+  token_usage: TokenUsage
+  attempts: number
+  used_fallback: boolean
+  status: string
+}
+
+export interface SessionSummary {
+  session_id: string
+  title: string
+  dataset_id: string
+  profile_summary: { row_count: number; column_names: string[] }
+  turn_count: number
+  created_at: string
+  updated_at: string
+  dataframe_loaded: boolean
+}
+
+export interface SessionDetail {
+  session_id: string
+  title: string
+  dataset_id: string
+  dataframe_loaded: boolean
+  profile: Profile
+  turns: SessionTurn[]
 }
 
 export interface ApiError {
@@ -120,4 +161,24 @@ export async function askQuestion(datasetId: string, question: string): Promise<
     throw new ApiCallError('NETWORK', 'Network error — is the server running?')
   }
   return unwrap<AnswerResult>(res)
+}
+
+export async function getSessions(): Promise<SessionSummary[]> {
+  let res: Response
+  try {
+    res = await fetch('/api/sessions')
+  } catch {
+    throw new ApiCallError('NETWORK', 'Network error — is the server running?')
+  }
+  return unwrap<SessionSummary[]>(res)
+}
+
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+  let res: Response
+  try {
+    res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+  } catch {
+    throw new ApiCallError('NETWORK', 'Network error — is the server running?')
+  }
+  return unwrap<SessionDetail>(res)
 }

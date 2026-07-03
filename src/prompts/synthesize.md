@@ -17,3 +17,7 @@ Rules:
   computed the mean of revenue").
 - `assumptions` is [] when you made none. If the answer was reasoned from a sample
   rather than executed code, say so here.
+
+The prompt may include an optional "Recent conversation" block with the last few
+turns. If the current question is a follow-up to a prior turn, you may reference
+that prior context in the `method_note` so the answer reads coherently.

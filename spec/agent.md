@@ -43,7 +43,11 @@ Model is env-configurable (`AGENT_GEMINI_MODEL`, default `gemini-2.5-flash`).
 class AgentState(TypedDict):
     # Identity
     run_id: int                          # set at initialisation (DB runs row)
+    session_id: str                      # session this turn belongs to (Phase 2)
     dataset_id: str                      # in-memory dataframe key
+
+    # Conversation context (Phase 2)
+    history: list[dict]                  # last N prior turns: {question, method_note, executed_code}
 
     # Input
     question: str                        # user question
@@ -75,12 +79,12 @@ class AgentState(TypedDict):
 ## Nodes / Steps
 
 ### `node_init`
-**Reads:** `dataset_id`, `question`. **Writes:** `run_id`, `profile`, `sample`, `attempts=0`, `step_trace=[]`, `token_usage`, `assumptions=[]`, `used_fallback=False`.
-**LLM call:** no. Creates the `runs` DB row, loads the profile/sample for the dataset. Emits step `profiling: done` (profile reused from upload).
+**Reads:** `dataset_id`, `session_id`, `question`. **Writes:** `run_id`, `profile`, `sample`, `history`, `attempts=0`, `step_trace=[]`, `token_usage`, `assumptions=[]`, `used_fallback=False`.
+**LLM call:** no. Creates the `runs` DB row (with `session_id`), loads the profile/sample for the dataset, and (Phase 2) loads the session's last N=3 completed turns into `history` as a compact `{question, method_note, executed_code}` list. Emits step `profiling: done` (profile reused from upload).
 
 ### `node_write_code`
-**Reads:** `profile`, `sample`, `question`, `last_traceback`, `attempts`. **Writes:** `code`, `token_usage` (accumulated), `step_trace`.
-**LLM call:** yes — `gemini-2.5-flash`, structured output = pandas snippet assigning to `result`. On retry, includes `last_traceback`. Emits step `writing_code`.
+**Reads:** `profile`, `sample`, `question`, `history`, `last_traceback`, `attempts`. **Writes:** `code`, `token_usage` (accumulated), `step_trace`.
+**LLM call:** yes — `gemini-2.5-flash`, structured output = pandas snippet assigning to `result`. Injects the compact `history` summary (Phase 2) so follow-ups resolve against prior turns. On retry, includes `last_traceback`. Emits step `writing_code`.
 
 ### `node_execute_code`
 **Reads:** `code`, `dataset_id`. **Writes:** `result_repr` or `last_traceback`, `attempts += 1`, `step_trace`.
@@ -90,8 +94,8 @@ class AgentState(TypedDict):
 | Local pandas exec | Run generated code | Capture traceback → route back to `write_code` (bounded) |
 
 ### `node_synthesize_answer`
-**Reads:** `question`, `result_repr`, `used_fallback`. **Writes:** `answer`, `method_note`, `assumptions`, `token_usage`, `step_trace`.
-**LLM call:** yes — turns the computed result into key-numbers + a 1–3 sentence method note; flags assumptions. Emits `synthesizing: done`.
+**Reads:** `question`, `history`, `result_repr`, `used_fallback`. **Writes:** `answer`, `method_note`, `assumptions`, `token_usage`, `step_trace`.
+**LLM call:** yes — turns the computed result into key-numbers + a 1–3 sentence method note; flags assumptions; may reference the prior turn via the compact `history` summary. Emits `synthesizing: done`.
 
 ### `node_build_chart`
 **Reads:** `question`, `result_repr`. **Writes:** `chart_spec` (or `None`), `token_usage`.
@@ -155,11 +159,18 @@ node_synthesize_answer ──► node_build_chart ──► node_finalize ──
 |-------|-----------|----------------|
 | **Within a run** | LangGraph state | All in-progress data incl. attempts + traceback |
 | **Across runs** | SQLite `runs` table + query log file | Every Q&A, code, tokens, attempts (see [data.md](data.md)) |
-| **Conversation** | Phase 1: history kept in the browser view (client-side); Phase 2: persisted per-session in DB | Prior Q&A pairs |
+| **Conversation** | Phase 2: persisted per-session in the SQLite `sessions`/`runs` tables (Phase 1 was browser-only) | Prior Q&A pairs (question + method_note/answer + executed_code) |
 
-> **Assumed:** Phase 1 keeps conversation history in the browser view only (the running Q&A list is client-held); server-persisted multi-question session memory is Phase 2. Justified: Phase 1 sessions are one-shot per the brief, and each question already carries `dataset_id`; the primary journey (upload → ask → answer) works first-time without cross-turn server memory.
+> **Assumed:** Phase 1 kept conversation history in the browser view only (client-held); Phase 2 persists it per-session in the DB (see [data.md](data.md)), which survives page reload and process restart.
 
-**Context window management:** Prompts carry only the profile + a small head/describe sample, never the full dataframe — keeps within limits and keeps spend low.
+**Prior-turn context injection (Phase 2, additive — no graph topology change):**
+- `node_init` reads the session's runs (ordered by `created_at`), takes the **last N = 3** completed turns, and populates `state["history"]` as a compact list of `{question, method_note, executed_code}` — **never** the full `result_repr` (keeps token spend low).
+- `node_write_code` injects this compact history summary into its prompt so a follow-up like "now break that down by region" resolves the referent ("that") against the prior turn's question/code.
+- `node_synthesize_answer` receives the same compact summary so the natural-language method note can reference the prior turn coherently.
+- `node_fallback_reason` also receives the summary (same low-token compact form).
+- N is env-configurable (`AGENT_HISTORY_TURNS`, default 3). When the session has no prior turns, `history=[]` and prompts are identical to Phase 1.
+
+**Context window management:** Prompts carry only the profile + a small head/describe sample + the compact last-N-turns summary, never the full dataframe or full result_reprs — keeps within limits and keeps spend low.
 
 ---
 

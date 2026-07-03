@@ -23,10 +23,14 @@ class RunFailed(Exception):
     pass
 
 
-def run_ask(dataset_id: str, question: str) -> dict:
-    """Run the graph. Raises typed errors mapped to api_error by the router."""
+def run_ask(dataset_id: str, question: str, session_id: str | None = None) -> dict:
+    """Run the graph. Raises typed errors mapped to api_error by the router.
+
+    Phase 2: `session_id` scopes the turn and seeds prior-turn context injection.
+    """
     initial: AgentState = {
         "dataset_id": dataset_id,
+        "session_id": session_id,
         "question": question,
         "error": None,
     }
@@ -43,6 +47,7 @@ def run_ask(dataset_id: str, question: str) -> dict:
     usage = final.get("token_usage") or {"prompt": 0, "completion": 0, "total": 0}
     return {
         "run_id": final.get("run_id"),
+        "session_id": final.get("session_id"),
         "answer": final.get("answer"),
         "method_note": final.get("method_note"),
         "executed_code": final.get("code"),

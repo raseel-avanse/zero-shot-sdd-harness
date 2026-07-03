@@ -4,7 +4,11 @@ from typing import TypedDict
 class AgentState(TypedDict, total=False):
     # Identity
     run_id: int                          # DB runs row id
+    session_id: str                      # session this turn belongs to (Phase 2)
     dataset_id: str                      # in-memory dataframe key
+
+    # Conversation context (Phase 2): last N prior turns
+    history: list                        # [{question, method_note, executed_code}]
 
     # Input
     question: str

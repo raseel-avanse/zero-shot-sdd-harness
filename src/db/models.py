@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Integer, Text, TIMESTAMP, Boolean, JSON
+from sqlalchemy import Integer, Text, TIMESTAMP, Boolean, JSON, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -12,12 +12,34 @@ class Base(DeclarativeBase):
     pass
 
 
+class SessionRow(Base):
+    """One conversation against a loaded dataset (Phase 2). See spec/data.md § Session."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
+    profile_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, default=_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, default=_now
+    )
+
+
 class RunRow(Base):
-    """One row per question asked (one agent run). See spec/data.md § Run."""
+    """One row per question asked (one agent run / Turn). See spec/data.md § Run."""
 
     __tablename__ = "runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Phase 2: FK to the session this turn belongs to. Nullable so the migration
+    # applies cleanly on an existing DB with pre-Phase-2 runs (session_id=NULL).
+    session_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("sessions.id"), nullable=True
+    )
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)

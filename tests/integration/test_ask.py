@@ -115,16 +115,18 @@ def test_self_correction_recovers(large_numeric_df, _isolated_db, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Edge case: a ranking question yields a bar chart_spec
 # --------------------------------------------------------------------------- #
-@pytest.mark.usefixtures("_require_llm_key")
+@pytest.mark.usefixtures("fake_llm")
 def test_ranking_question_produces_chart(large_numeric_df, _isolated_db):
+    """Fast chart-path plumbing test (fake LLM). Real live chart coverage lives
+    in the Playwright golden path."""
     from graph.runner import run_ask
 
     dataset_id = _register_df(large_numeric_df)
     card = run_ask(dataset_id, "Show total revenue for each region.")
     assert card["result_repr"]
-    # chart is optional but a per-region total should chart as bar-ish
-    if card["chart_spec"] is not None:
-        assert card["chart_spec"].get("type") in {"bar", "line", "scatter", "histogram"}
+    # With the fake LLM the chart node deterministically returns a bar spec.
+    assert card["chart_spec"] is not None
+    assert card["chart_spec"].get("type") in {"bar", "line", "scatter", "histogram"}
 
 
 # --------------------------------------------------------------------------- #
