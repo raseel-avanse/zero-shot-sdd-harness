@@ -1,42 +1,36 @@
 # Spec — Single Source of Truth
 
-This directory is the authoritative specification for this project. All code must match this spec. When spec and code disagree, spec wins — fix the code.
+This directory is the authoritative specification for the **Data Analyst Agent**. All code must match this spec. When spec and code disagree, spec wins — fix the code.
 
-## Status
+## Vision
 
-Check `spec/roadmap.md` to see if the spec has been filled in. If it still contains `<!-- FILL IN -->` markers, the spec-writer sub-agent needs to complete it before any application code is written.
+A single-user, browser-based data-analyst agent for ad-hoc exploration. The user uploads a small tabular file (a few MB) and asks plain-English questions. The agent auto-profiles the data on upload, then answers each question by **writing real pandas code, running it locally against the actual dataframe, and self-correcting on error** — returning the key numbers, a brief note on how it got there, and an auto-generated chart when one fits. Trust bar is high (the user acts on the numbers), so shown-work and correctness are prioritized over speed; LLM cost is kept low via a cheap-but-capable model tier and minimal prompt payloads.
 
-## Structure
+The running conversation stays in view. Sessions are essentially one-shot (upload → ask → answer) but the history of Q&A remains visible.
 
-`spec/` is **the product** — what the agent does, in terms a user can read and edit. Generic engineering doctrine (how to build anything) lives in `harness/`.
+## Capability Index
+
+See [capabilities/index.md](capabilities/index.md). Core capabilities (Phase 1):
+1. Upload & auto-profile dataset
+2. Ask question → codegen → local execute → self-correct → answer with method note
+3. Auto-chart when it fits
+4. Per-question transparency: shown code + token count + step status + query log
+
+## Manifest
 
 ```
-spec/                 ← The product (you read & edit this)
-  roadmap.md       ← Purpose, goals, success criteria, future phases
-  architecture.md  ← System design, layers, data flow, and the chosen ## Stack
-  agent.md         ← This agent's graph (state, nodes, edges) — if a framework is used
-  data.md          ← Data schema
-  api.md           ← API surface (REST/GraphQL/CLI/etc.)
-  ui.md            ← UI requirements (if any)
-  capabilities/    ← One file per discrete capability
-
-harness/              ← How to build it (generic engineering doctrine)
-  rules/           ← Mandatory rules (ai-agents, git, secret-hygiene)
-  patterns/        ← phases, project-layout, test-driven, ui-ux, engineering-practices,
-                     spec-driven, tech-stack (generic stack rules), code (conventions),
-                     agentic-ai (pattern catalogue)
+roadmap.md       ← Purpose, success criteria, out-of-scope, phased plan
+architecture.md  ← System design, trust boundary, and the chosen ## Stack
+agent.md         ← The LangGraph agent (state, nodes, edges, retry loop)
+data.md          ← SQLAlchemy models + query log file
+api.md           ← REST endpoints and response envelope
+ui.md            ← Single-page UI + labelled stubs
+capabilities/    ← One file per capability
 ```
 
 ## Governance Rules
 
 1. **Spec first** — no code change without a spec backing it
-2. **One fact, one place** — never duplicate facts across spec files; cross-reference with links
-3. **Capabilities are atomic** — each file in `capabilities/` describes exactly one discrete thing the agent can do
-4. **No implementation details in product spec** — `spec/` describes WHAT, `harness/` describes HOW
-5. **Update spec before code** — if requirements change, update the spec first, then update the code
-
-## Who Updates the Spec
-
-- **New project:** the `/zero-shot-build` skill drives the spec-writer sub-agent, which drafts and self-reviews the spec
-- **New capability:** run `/zero-shot-build` on an existing spec — it adds the capability via the spec-writer
-- **Drift between spec and code:** run `/zero-shot-sync` to reconcile (spec wins)
+2. **One fact, one place** — cross-reference with links, never duplicate facts
+3. **Capabilities are atomic** — one discrete behaviour per file
+4. **WHAT here, HOW in architecture.md / agent.md** — no stack detail leaks into the product-narrative files

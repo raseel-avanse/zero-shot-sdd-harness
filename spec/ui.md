@@ -1,32 +1,43 @@
 # UI
 
-> **Boilerplate status:** Delete this file if the agent has no UI. Otherwise, filled in by the spec-writer sub-agent.
-
 ---
 
 ## UI Type
 
-<!-- FILL IN: Web dashboard / CLI / chat interface / none -->
+Single-page web app (Next.js 15 static export, React 19, served at `/app`). One screen; the running conversation stays in view.
 
 ## Views / Screens
 
-<!-- FILL IN: One section per major view. -->
+### Screen: Analyst Workspace (single page)
 
-### Screen: <!-- Name -->
+**Purpose:** Upload a dataset, see its profile, ask questions, read answers with full shown-work, and keep the Q&A history visible.
 
-**Purpose:** <!-- what the user does here -->
+**Layout (top to bottom):**
 
-**Key elements:**
-- <!-- element 1 -->
-- <!-- element 2 -->
+1. **Upload zone** (real) — drag/drop or pick a CSV → `POST /api/datasets`. Shows filename + size; rejects non-CSV / oversized with a readable message.
+2. **Dataset profile card** (real) — after upload: row count, per-column name/dtype/null-count, and data-quality flags. Renders from the `profile` in the upload response.
+3. **Question box** (real) — text input + Ask button → `POST /api/datasets/{id}/ask`. Disabled until a dataset is loaded.
+4. **Live step-status** (real) — while a question runs, shows ordered steps (profiling → writing code → running code [with attempt count] → synthesizing) from `step_trace`.
+5. **Answer card** (real) — for each answered question, renders the pinned contract from [api.md](api.md):
+   - Key numbers + answer text
+   - Method note ("how it got there")
+   - Assumptions block (only when non-empty; visually flagged as best-guess)
+   - Collapsible "Show code" view of `executed_code`
+   - Auto-chart (rendered from `chart_spec` when not null; Recharts)
+   - Token count badge (`token_usage.total`) and attempt count
+6. **Conversation history** (real, client-held) — answered questions stack in view, newest at top/bottom; each is an answer card. Phase 1 history is in the browser only.
 
-**Actions available:**
-- <!-- action 1 -->
+**Labelled NON-FUNCTIONAL stubs (must never read as bugs — disabled + "Coming soon" badge):**
+- **More data sources** panel: "Connect Google Sheets", "Connect JSON API" buttons — disabled, labelled *Coming soon (Phase 3)*.
+- **Live database** button — disabled, labelled *Coming soon (Phase 4)*.
+- **Export cleaned/filtered dataset** button on the answer card — disabled, labelled *Coming soon (Phase 5)*.
 
 ## Error States
 
-<!-- FILL IN: How does the UI surface errors and loading states to the user? -->
+- Upload errors (parse / type / size): inline message on the upload zone.
+- Ask errors (`DATASET_NOT_FOUND`, `LLM_UNAVAILABLE`, `RUN_FAILED`): red inline banner on the answer card with the `error.detail`; the question stays in history marked failed.
+- Loading: the live step-status component IS the loading state for a question; a spinner on the upload zone during profiling.
 
 ## Tech Stack
 
-<!-- FILL IN: Filled in by spec-writer. E.g., Next.js 15 + React 19 + Tailwind -->
+Next.js 15 + React 19 + Tailwind, static export → `frontend/out/`, mounted at `/app`. Charts via Recharts. E2E: Playwright in `frontend/tests/e2e/`.
