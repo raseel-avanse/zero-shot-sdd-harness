@@ -1,77 +1,87 @@
 'use client'
 
 import { useState } from 'react'
+import { askQuestion, ApiCallError, type Profile, type UploadResult } from '@/lib/api'
+import UploadZone from '@/components/UploadZone'
+import ProfileCard from '@/components/ProfileCard'
+import QuestionBox from '@/components/QuestionBox'
+import AnswerCard, { type HistoryItem } from '@/components/AnswerCard'
+import { SourceStubs } from '@/components/Stubs'
+
+interface Dataset {
+  id: string
+  fileName: string
+  profile: Profile
+}
 
 export default function Home() {
-  const [input, setInput] = useState('')
-  const [result, setResult] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [dataset, setDataset] = useState<Dataset | null>(null)
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [running, setRunning] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!input.trim()) return
-    setLoading(true)
-    setError(null)
-    setResult(null)
+  function onUploaded(result: UploadResult, fileName: string) {
+    setDataset({ id: result.dataset_id, fileName, profile: result.profile })
+    setHistory([])
+  }
+
+  async function onAsk(question: string) {
+    if (!dataset) return
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const pending: HistoryItem = { id, question, status: 'running', result: null, error: null }
+    // Newest at top.
+    setHistory(h => [pending, ...h])
+    setRunning(true)
     try {
-      const res = await fetch('/runs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input_text: input }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.detail?.message ?? `Request failed (${res.status})`)
-      } else if (data.data?.error) {
-        setError(data.data.error)
-      } else {
-        setResult(data.data.output_text)
-      }
-    } catch {
-      setError('Network error — is the server running?')
+      const result = await askQuestion(dataset.id, question)
+      setHistory(h =>
+        h.map(item => (item.id === id ? { ...item, status: 'done', result } : item)),
+      )
+    } catch (e) {
+      const msg = e instanceof ApiCallError ? e.message : 'The question failed to run.'
+      setHistory(h =>
+        h.map(item => (item.id === id ? { ...item, status: 'failed', error: msg } : item)),
+      )
     } finally {
-      setLoading(false)
+      setRunning(false)
     }
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16">
-      <h1 className="mb-8 text-3xl font-bold tracking-tight">Agent</h1>
+    <main className="mx-auto max-w-3xl px-4 py-10">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Data Analyst Agent</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Upload a CSV, ask a question in plain English, and see the real pandas that answers it.
+        </p>
+      </header>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <textarea
-          className="w-full rounded-lg border border-gray-300 p-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          rows={4}
-          placeholder="Enter text to transform…"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          disabled={loading}
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? 'Running…' : 'Run'}
-        </button>
-      </form>
+      <div className="space-y-6">
+        <UploadZone onUploaded={onUploaded} />
 
-      {error && (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+        {dataset && <ProfileCard fileName={dataset.fileName} profile={dataset.profile} />}
 
-      {result && (
-        <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 text-sm whitespace-pre-wrap shadow-sm">
-          {result}
-        </div>
-      )}
+        <SourceStubs />
 
-      {!result && !error && !loading && (
-        <p className="mt-10 text-center text-sm text-gray-400">Results will appear here.</p>
-      )}
+        <QuestionBox disabled={!dataset} running={running} onAsk={onAsk} />
+
+        {history.length === 0 ? (
+          dataset ? (
+            <p className="py-8 text-center text-sm text-gray-400">
+              Ask a question above to see the answer, the executed code, and a chart when one fits.
+            </p>
+          ) : (
+            <p className="py-8 text-center text-sm text-gray-400">
+              Upload a dataset to get started.
+            </p>
+          )
+        ) : (
+          <section aria-label="Conversation history" className="space-y-4" data-testid="history">
+            {history.map(item => (
+              <AnswerCard key={item.id} item={item} />
+            ))}
+          </section>
+        )}
+      </div>
     </main>
   )
 }

@@ -33,3 +33,17 @@ class LLMClient:
 
     def call_model(self, prompt: str, *, system: str | None = None) -> str:
         return self._provider.call_model(prompt, system=system)
+
+    def call_model_with_usage(
+        self, prompt: str, *, system: str | None = None, json_mode: bool = False
+    ) -> tuple[str, dict]:
+        """Return (text, {"prompt","completion","total"}).
+
+        Providers that natively report usage (Gemini) use their metadata;
+        otherwise fall back to text-only with a zeroed usage dict.
+        """
+        fn = getattr(self._provider, "call_model_with_usage", None)
+        if fn is not None:
+            return fn(prompt, system=system, json_mode=json_mode)
+        text = self._provider.call_model(prompt, system=system)
+        return text, {"prompt": 0, "completion": 0, "total": 0}

@@ -1,0 +1,13 @@
+region,product,revenue,units
+West,Widget,4200,120
+East,Widget,3100,95
+North,Widget,2800,80
+South,Widget,3600,110
+West,Gadget,5100,60
+East,Gadget,4700,55
+North,Gadget,3900,44
+South,Gadget,4300,50
+West,Gizmo,2200,200
+East,Gizmo,1900,180
+North,Gizmo,1600,150
+South,Gizmo,2000,170

@@ -114,41 +114,66 @@ agent.py            ← verify setup (default); --run to start the server
 .env.example
 ```
 
-**Capability slot** — the three files to replace for your agent:
-- `src/graph/nodes.py` — replace `transform_text` with your logic
-- `src/prompts/transform.md` — replace with your system prompt
-- `frontend/src/app/page.tsx` — replace the transform form with your UI
-
-Everything else (graph wiring, API, DB, settings, tests) is already working.
+This build implements the **Data Analyst Agent**: upload a CSV, ask a plain-English
+question, and get an answer computed by locally-executed, self-correcting pandas
+(LangGraph graph in `src/graph/`, Gemini prompts in `src/prompts/`, in-memory
+dataframe store + profiling in `src/domain/`).
 
 ---
 
-## Running the Baseline
+## Running the Data Analyst Agent (Phase 1)
+
+> All commands run from the repo root. Every Python command is `uv run`-prefixed.
 
 ```bash
 cp .env.example .env
-# edit .env: set exactly ONE provider key —
-#   AGENT_ANTHROPIC_API_KEY=<your key>   or   AGENT_GEMINI_API_KEY=<your key>
-# the provider is auto-detected from whichever key is set
-uv sync
-python agent.py                        # verify tools, .env, deps, tests (default)
-python agent.py --run                  # migrations + frontend build + start server
+# edit .env: set your Gemini key — AGENT_GEMINI_API_KEY=<your key>
+# (the provider is auto-detected from whichever key is set)
+uv sync --extra dev
+
+# 1. Apply DB migrations, then confirm a revision is applied:
+uv run alembic upgrade head
+uv run alembic current            # → shows the head revision id
+
+# 2. (optional, for the UI) build the frontend static export:
+cd frontend && pnpm build && cd ..
+
+# 3. Start the server on port 8001:
+uv run python -m src
 ```
 
-Once running:
+Once running, open `http://localhost:8001/app` for the UI (when the frontend is built).
 
-| URL | What |
-|-----|------|
-| `http://localhost:8001/app/` | **UI** — transform form (the capability slot) |
-| `http://localhost:8001/health` | API health check |
-| `http://localhost:8001/docs` | Interactive API docs (Swagger) |
+### API endpoints
 
-Tests:
+| Method / path | What |
+|---------------|------|
+| `POST /api/datasets` | Upload a CSV (`multipart/form-data`, field `file`) → returns `{dataset_id, profile}` |
+| `POST /api/datasets/{dataset_id}/ask` | Body `{"question": "..."}` → the answer-card contract (answer, method note, executed code, result, chart spec, token usage, attempts, step trace) |
+| `GET /api/health` | Liveness → `{"ok": true, "data": {"status": "healthy"}}` |
+
+Every response uses the envelope `{"ok": true, "data": {...}}` on success and
+`{"ok": false, "error": {"code", "detail"}}` on error.
+
+### Tests
 
 ```bash
-uv run pytest tests/unit/ -v          # no key needed
-uv run pytest tests/ -v               # requires real key in .env
+uv run pytest tests/unit          # no key needed
+uv run pytest                     # full suite; integration tests use real Gemini via .env
 ```
+
+### Environment variables
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `AGENT_DATABASE_URL` | `sqlite:///./data/agent.db` | SQLite DB path |
+| `AGENT_GEMINI_API_KEY` | — | Gemini API key (provider auto-detected) |
+| `AGENT_LLM_MODEL` | `gemini-2.5-flash` | Model id |
+| `AGENT_MAX_UPLOAD_MB` | `10` | Reject uploads larger than this |
+| `AGENT_MAX_CODE_ATTEMPTS` | `3` | Bounded self-correction retries |
+| `AGENT_CODE_TIMEOUT_S` | `15` | Per-execution wall-clock timeout |
+| `AGENT_QUERY_LOG_PATH` | `data/queries.log` | Append-only JSON-lines query log |
+| `AGENT_MAX_DATASETS` | `16` | In-memory dataframe LRU cap |
 
 ---
 
