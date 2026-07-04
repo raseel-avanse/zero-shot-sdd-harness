@@ -2,9 +2,9 @@ from fastapi import APIRouter
 
 from api._common import ok
 
-router = APIRouter()
+router = APIRouter(prefix="/api")
 
 
 @router.get("/health")
 def health() -> dict:
-    return ok({"status": "ok"})
+    return ok({"status": "healthy"})
