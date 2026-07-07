@@ -1,0 +1,6 @@
+# Runtime PoC/sandbox artifacts must never be committed into the fixture repo.
+# The sandbox runs in an isolated temp copy, but guard against any stray writes.
+_poc_check.py
+backup.tgz
+*.tgz
+__pycache__/

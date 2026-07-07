@@ -1,2 +1,28 @@
 @import "tailwindcss";
 @source "../";
+
+:root {
+  color-scheme: dark;
+}
+
+/* Markdown rendered blocks (LLM output) */
+.prose-console p {
+  margin: 0 0 0.5rem;
+}
+.prose-console ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0 0 0.5rem;
+}
+.prose-console code {
+  background: rgb(30 41 59);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+.prose-console pre {
+  background: rgb(2 6 23);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}

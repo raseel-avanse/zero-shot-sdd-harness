@@ -1,0 +1,6 @@
+# VULN_DEPS: pinned versions with well-known CVEs.
+Flask==0.12.2
+requests==2.19.1
+PyYAML==3.13
+Django==1.11.0
+Jinja2==2.10

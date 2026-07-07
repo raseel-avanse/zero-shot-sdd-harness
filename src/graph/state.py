@@ -2,8 +2,34 @@ from typing import TypedDict
 
 
 class AgentState(TypedDict, total=False):
+    """Bounded security-assessment pipeline state (see spec/agent.md)."""
+
+    # Identity
     run_id: str
-    input_text: str
-    output_text: str
+    engagement_id: str
+
+    # Input (from engagement + scope_record)
+    target_path: str
+    scope_allowlist: list[str]
+    non_destructive_only: bool
+
+    # Control / budget
+    step_budget: int
+    step_count: int
+    current_phase: str            # recon | prioritize | hunt | validate | report
+    current_category: str | None
+
+    # Pipeline data
+    recon: dict                   # {files, languages, manifests}
+    priorities: list[str]         # ordered categories still to hunt
+    candidate_findings: list[dict]
+    findings: list[dict]          # validated (also persisted as produced)
+
+    # Cost accounting
+    prompt_tokens: int
+    completion_tokens: int
+    estimated_cost_usd: float
+
+    # Output / status
+    status: str                   # running | completed | failed
     error: str | None
-    messages: list          # [{role: "user"|"assistant", content: str}, ...] — chat-turn history

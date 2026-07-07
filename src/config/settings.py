@@ -21,6 +21,18 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="")
     gemini_api_key: str = Field(default="")
 
+    # Model tiers (env: AGENT_LLM_MODEL_FAST / AGENT_LLM_MODEL_SMART).
+    # Read defensively by llm/cost.py; blank falls back to provider defaults.
+    # NOTE: the provided Gemini key is free-tier. *-pro models have a 0 quota
+    # and gemini-2.5-flash a very small daily cap there, so both tiers default
+    # to flash-lite (a larger free-tier bucket) so runs complete. Override
+    # AGENT_LLM_MODEL_FAST/SMART with flash/pro models on a paid key.
+    llm_model_fast: str = Field(default="gemini-flash-lite-latest")
+    llm_model_smart: str = Field(default="gemini-flash-lite-latest")
+
+    # Bounded agent step budget per assessment run (env: AGENT_STEP_BUDGET).
+    step_budget: int = Field(default=40)
+
 
 _settings: Settings | None = None
 

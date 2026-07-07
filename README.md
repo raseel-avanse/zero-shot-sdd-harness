@@ -1,176 +1,134 @@
-# Zero Shot SDD Harness for Building Agents
+# Sentinel — Whitebox Security-Assessment Agent
 
-Give it a one-line idea. Walk away with a working, tested, phased agent.
+> **All commands in this README run from the repository root.** The repo root IS the project — there is no subdirectory to `cd` into except where a block explicitly says so (the frontend build). Every command is prefixed with `uv run`; a bare `alembic`/`pytest`/`python` will fail unless you have manually activated the venv.
 
-A lean, Claude-Code-native harness for building agentic software **spec-first**. One person with an idea and one API key can drive a real, production-shaped agent into existence — and a senior engineer opening the result finds a conventional, reviewable stack, not generated mush.
+Sentinel is a whitebox information-security agent for a security team. A user creates a scope-gated engagement, points it at a local source repository, and starts an agentic, bounded multi-step assessment. The agent runs a LangGraph pipeline — **enforce_scope → recon → prioritize → hunt (four vulnerability classes) → validate → report** — and streams validated finding cards (severity, file:line, evidence/PoC, remediation + suggested patch) into the UI with a live step counter and token/cost panel, all behind a hard **in-code scope gate**.
 
----
+## What Sentinel Does (Phase 1)
 
-## The Spirit
+- Scope-gated repository code review: an in-code allowlist refuses any out-of-scope target; no out-of-scope file is read.
+- Validates each candidate vulnerability with static LLM reasoning plus a generated PoC executed in an **isolated sandbox copy** of the target (the real repo is never mutated).
+- Streams validated findings live; unconfirmed findings are marked, never dropped.
+- Reports token count + estimated cost per run and never exceeds its step budget.
+- Raw source is never persisted off-box — only findings/metadata and bounded excerpts.
 
-Six convictions the whole repo is built around:
-
-1. **Spec is the source of truth.** The spec is written before the code, always. When spec and code disagree, the spec wins and the code is fixed (`/zero-shot-sync`). Every AI session reads the same requirements instead of re-deriving them.
-2. **Built for two audiences at once.** A non-coder drives it with a single sentence; a senior engineer inherits a clean FastAPI + LangGraph stack they can read, review, and own. Neither audience is an afterthought.
-3. **Lean harness, not a framework.** `harness/` is engineering *mindfulness* — rules and patterns that keep every session consistent — deliberately Claude-Code-only and kept small. The product runtime stays provider-agnostic; the harness does not.
-4. **Smallest first-time-right win, phase by phase.** Each phase ships the smallest increment a human can actually test, and it must work the *first* time they test it — real on the tested path, with clearly-labelled stubs for everything still to come. No rough edges on the path you're handed.
-5. **A human gates every phase.** The build is autonomous *within* a phase and stops at each boundary for you to test the increment. You stay in control of what "done" means.
-6. **Real LLM/API or it doesn't count.** Gates, tests, and evals run against the real model with keys from `.env`. A stubbed pass is not a pass.
+**Phase 2** (live-app probing, interactive chat, re-test after remediation) and **Phase 3** (export dossier, proactive next-probe suggestions, finding lifecycle) are visible in the UI as clearly-labelled "coming soon" stubs — they are intentional, not bugs.
 
 ---
 
-## What This Is
+## Prerequisites
 
-A starting point for building AI agents spec-first. The repo ships with:
+- **Docker Postgres** — a PostgreSQL 16 container named `sec-agent-pg` listening on port **5433**, database `secagent`. Start it with:
 
-- A working **baseline agent** in `src/` (FastAPI + LangGraph + SQLite, provider-agnostic LLM — Anthropic or Gemini, `transform_text` as the capability slot) — tests pass out of the box
-- A **spec template** in `spec/` covering roadmap, architecture, capabilities, data model, API, UI, and agent graph
-- Three **zero-shot skills** (`/zero-shot-build`, `/zero-shot-fix`, `/zero-shot-sync`)
-- A four-agent **team** — agent-builder orchestrates (plans, fans out, owns git/PR); spec-writer is the single design authority; code-generator implements one slice per instance (parallelised); qa-auditor reviews and gates
-- Engineering rules and patterns in `harness/` so every Claude Code session is consistent
-- **Human testing gate between phases** — autonomous within a phase, you test each increment before the next starts
+  ```bash
+  docker start sec-agent-pg
+  ```
+
+  (If it does not exist yet, create it, e.g. `docker run -d --name sec-agent-pg -e POSTGRES_DB=secagent -e POSTGRES_PASSWORD=... -p 5433:5432 postgres:16`.)
+
+- **`.env`** at the repo root with:
+  - `AGENT_DATABASE_URL` — the psycopg3 URL, e.g. `postgresql+psycopg://<user>:<pass>@localhost:5433/secagent`
+  - `AGENT_GEMINI_API_KEY` — a real Google Gemini API key (all gates and tests call the real API)
+
+  See `.env.example` for the full list of variables.
+
+- **`uv`** (Python env/runner) and **`pnpm`** (frontend build).
 
 ---
 
-## How to Use This
+## Setup
 
-### Step 1 — Clone
+Install Python dependencies (from the repo root):
 
 ```bash
-git clone https://github.com/smallTechOrg/zero-shot-sdd-harness.git my-agent
-cd my-agent
-```
-
-### Step 2 — Open in Claude Code
-
-```bash
-claude
-```
-
-### Step 3 — Build
-
-```
-/zero-shot-build An agent that monitors my Shopify store for low-inventory products and drafts restock emails to suppliers
-```
-
-One intake round (scope, stack, API keys → fill `.env`), then the agent builds phase by phase and stops at each boundary for you to test.
-
----
-
-## What Happens (Intake → Phase by Phase)
-
-```
-Your idea
-    ↓
-INTAKE — scope, stack, LLM provider, constraints; fill .env with the required API key
-    ↓
-[spec-writer]  → Full spec: architecture + agent-graph + phased plan (self-reviewed)
-    ↓
-[agent-builder] → Feature branch + PR, scaffold
-    ↓
-per phase — all slices concurrently:
-    [code-generator: slice-a]  ──→  [qa-auditor: slice-a]  ─┐
-    [code-generator: slice-b]  ──→  [qa-auditor: slice-b]  ─┤→  commit + push
-    [code-generator: slice-c]  ──→  [qa-auditor: slice-c]  ─┘
-    ↓
-HUMAN TESTING GATE — exact run commands + expected result; you confirm before next phase
-    ↓
-(issue → qa-auditor classifies SPEC-vs-CODE → code-generator fixes → re-gate)
-    ↓
-repeat per phase → SHIP
-```
-
-Phase 1 is the smallest first-time-right win — real on the tested path, with labelled stubs for everything coming later. Each later phase wires one more stub into real functionality.
-
----
-
-## Repo Layout
-
-```
-src/                ← baseline agent (FastAPI + LangGraph + SQLite, Anthropic/Gemini)
-  api/              ← FastAPI routers (create_app, health, runs)
-  config/           ← Pydantic BaseSettings
-  db/               ← SQLAlchemy models + session
-  domain/           ← Pydantic request/response models
-  graph/            ← LangGraph nodes, edges, state, runner  ← CAPABILITY SLOT
-  llm/              ← LLM client + providers/ (anthropic, gemini)
-  prompts/          ← prompt templates (.md)
-  observability/
-frontend/           ← Next.js static export (served by FastAPI at /app)
-tests/
-  unit/             ← passes with no API key
-  integration/      ← requires real key in .env
-spec/               ← your spec: roadmap, architecture, capabilities/, data, api, ui, agent
-harness/
-  rules/            ← ai-agents, git, secret-hygiene
-  patterns/         ← spec-driven, phases, project-layout, tech-stack, code, test-driven, ui-ux, agentic-ai, engineering-practices
-.claude/
-  skills/           ← /zero-shot-build, /zero-shot-fix, /zero-shot-sync
-  agents/           ← agent-builder, spec-writer, code-generator, qa-auditor
-CLAUDE.md
-pyproject.toml
-alembic.ini        ← Alembic migrations (alembic/)
-agent.py            ← verify setup (default); --run to start the server
-.env.example
-```
-
-**Capability slot** — the three files to replace for your agent:
-- `src/graph/nodes.py` — replace `transform_text` with your logic
-- `src/prompts/transform.md` — replace with your system prompt
-- `frontend/src/app/page.tsx` — replace the transform form with your UI
-
-Everything else (graph wiring, API, DB, settings, tests) is already working.
-
----
-
-## Running the Baseline
-
-```bash
-cp .env.example .env
-# edit .env: set exactly ONE provider key —
-#   AGENT_ANTHROPIC_API_KEY=<your key>   or   AGENT_GEMINI_API_KEY=<your key>
-# the provider is auto-detected from whichever key is set
 uv sync
-python agent.py                        # verify tools, .env, deps, tests (default)
-python agent.py --run                  # migrations + frontend build + start server
 ```
 
-Once running:
+---
 
-| URL | What |
-|-----|------|
-| `http://localhost:8001/app/` | **UI** — transform form (the capability slot) |
-| `http://localhost:8001/health` | API health check |
-| `http://localhost:8001/docs` | Interactive API docs (Swagger) |
+## Database
 
-Tests:
+Apply migrations, then verify the tables were actually created (from the repo root):
 
 ```bash
-uv run pytest tests/unit/ -v          # no key needed
-uv run pytest tests/ -v               # requires real key in .env
+uv run alembic upgrade head
+uv run alembic current
 ```
 
----
-
-## Rules AI Agents Follow
-
-Full rules in `harness/rules/ai-agents.md`. Summary:
-
-- Read the full spec before writing any code
-- Never skip a phase; commit every logical unit
-- Tests run against the real LLM/API using keys from `.env` — stubbed runs do not count as passing
-- Each phase is tested by the human before the next phase starts
-- The build record is git history + the PR + the per-phase test-handoffs
+`uv run alembic current` must print a revision id ending in `(head)`. Blank output means the migration silently failed — fix that before continuing.
 
 ---
 
-## FAQ
+## Frontend build
 
-**What if I already have a stack in mind?**
-State it in the idea: `/zero-shot-build [idea] — use Python + FastAPI + PostgreSQL`. Stack choices are binding.
+The Next.js UI is a static export served by FastAPI at `/app`. Build it once (this block runs from the `frontend/` directory):
 
-**What if something breaks?**
-Run `/zero-shot-fix [what's broken]` — qa-auditor classifies the problem (SPEC vs CODE), the right generator fixes it, qa-auditor re-gates.
+```bash
+cd frontend
+pnpm install
+pnpm build
+```
 
-**What if spec and code drift?**
-Run `/zero-shot-sync` — qa-auditor classifies each divergence, generators fix, spec wins.
+Return to the repo root afterward (`cd ..`) before running the server.
+
+---
+
+## Run
+
+Start the server (from the repo root):
+
+```bash
+uv run python -m src
+```
+
+Then open **http://localhost:8001/app/** in a browser.
+
+Health check: **http://localhost:8001/health** returns `{"data":{"status":"ok"},"error":null}`.
+
+### Using it
+
+1. Click **New Engagement** and fill the scope form, pointing it at a local repository path and adding that path to the allowlist. Submit.
+2. Open the engagement and click **Start Assessment**.
+3. Watch the step counter and phase/category advance, finding cards stream in (severity, file:line, evidence/PoC, remediation + suggested patch), and the token/cost panel update.
+
+The "coming soon" controls (live probing, chat, re-test, export, status controls, next-probe suggestions) are disabled Phase 2/3 stubs.
+
+---
+
+## Tests / Gate
+
+The full Phase 1 gate (real Gemini via `.env`, real Postgres on :5433) runs from the repo root:
+
+```bash
+uv run alembic upgrade head && uv run pytest -q && cd frontend && pnpm build && pnpm exec playwright test
+```
+
+To run just the Python suite:
+
+```bash
+uv run pytest -q
+```
+
+The integration suite includes an end-to-end run over a seeded vulnerable-repo fixture and asserts: multiple categories yield validated findings, `step_count <= step_budget`, non-zero token/cost, no full-source persistence, and that a scope-violation run is refused in code.
+
+---
+
+## Layout (Phase 1 surfaces)
+
+```
+src/
+  __main__.py       ← entry point (`uv run python -m src`)
+  api/              ← FastAPI routers: engagements, runs (SSE), findings, health
+  config/           ← settings (AGENT_* env vars)
+  db/               ← SQLAlchemy models + session (engagements, scope_records, assessment_runs, findings)
+  domain/           ← Pydantic request/response models
+  graph/            ← LangGraph 7-node assessment pipeline + runner + state
+  tools/            ← repo_walk, manifest, scope_guard, read_excerpt, sandbox (isolated PoC exec)
+  prompts/          ← recon / prioritize / hunt / validate prompts (.md)
+  llm/              ← Gemini client + token/cost accounting
+frontend/           ← Next.js static export served at /app
+alembic/            ← migrations
+tests/
+  unit/             ← no key needed
+  integration/      ← real Gemini + real Postgres
+```
