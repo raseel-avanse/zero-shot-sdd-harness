@@ -14,7 +14,7 @@ Sentinel is a whitebox information-security agent for a security team. A user cr
 
 **Phase 2 is live:** non-destructive live-app active probing (read-only, in-code host/verb guard against the recorded scope), an interactive chat mode with turn memory to direct follow-up probes, and re-test after remediation (a fixed finding transitions to `remediated`).
 
-**Phase 3** (export dossier, proactive next-probe suggestions, finding lifecycle) remains visible in the UI as clearly-labelled "coming soon" stubs — they are intentional, not bugs.
+**Phase 3 is live:** one-click dossier export (Markdown / PDF / JSON), proactive next-probe suggestions after each run, same-pattern-elsewhere flagging (findings sharing a vulnerability pattern are linked), and full finding status lifecycle (`new → validated → remediated`, plus `false_positive`). This is the final phase — no stubs remain.
 
 ---
 
@@ -95,7 +95,7 @@ Health check: **http://localhost:8001/health** returns `{"data":{"status":"ok"},
 
 Phase 2 adds three live features: choose a **live-app** target type for non-destructive active probing, use the **chat** panel to direct follow-up probes over the loaded engagement, and click **re-test** on a finding after fixing it to confirm remediation.
 
-The remaining "coming soon" controls (export dossier, finding status controls, next-probe suggestions) are disabled Phase 3 stubs.
+Phase 3 completes the tool: **export** the engagement dossier (MD/PDF/JSON), review the **next-probe suggestions** panel, see **same-pattern** findings linked, and move findings through the **status lifecycle**. No stubs remain.
 
 ---
 
