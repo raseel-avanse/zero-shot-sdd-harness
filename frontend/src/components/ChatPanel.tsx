@@ -51,9 +51,9 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
   return (
     <div
       data-testid="chat-panel"
-      className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+      className="rounded-xl border border-hairline bg-surface p-4 shadow-sm"
     >
-      <h4 className="mb-3 text-sm font-semibold text-slate-300">Interactive chat</h4>
+      <h4 className="mb-3 text-sm font-semibold text-ink-strong">Interactive chat</h4>
 
       <div
         ref={listRef}
@@ -63,13 +63,13 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
         {turns === null && (
           <div className="space-y-2">
             {[0, 1].map((i) => (
-              <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-800/60" />
+              <div key={i} className="h-10 animate-pulse rounded-lg bg-canvas" />
             ))}
           </div>
         )}
 
         {turns?.length === 0 && !sending && (
-          <p className="py-6 text-center text-sm text-slate-500">
+          <p className="py-6 text-center text-sm text-ink-muted">
             No messages yet — ask a follow-up to direct the assessment. Each reply remembers the
             prior turns of this engagement.
           </p>
@@ -80,7 +80,7 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
             <div className="flex justify-end">
               <div
                 data-testid="chat-user"
-                className="max-w-[85%] rounded-lg rounded-br-sm bg-emerald-600/20 px-3 py-2 text-sm text-emerald-100 ring-1 ring-emerald-500/30"
+                className="max-w-[85%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-white"
               >
                 {t.message}
               </div>
@@ -88,7 +88,7 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
             <div className="flex justify-start">
               <div
                 data-testid="chat-assistant"
-                className="max-w-[85%] rounded-lg rounded-bl-sm bg-slate-800/70 px-3 py-2 text-sm text-slate-200 ring-1 ring-slate-700"
+                className="max-w-[85%] rounded-lg rounded-bl-sm bg-canvas px-3 py-2 text-sm text-ink ring-1 ring-hairline"
               >
                 <Markdown>{t.reply}</Markdown>
               </div>
@@ -98,7 +98,7 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
 
         {sending && (
           <div className="flex justify-start">
-            <div className="rounded-lg bg-slate-800/70 px-3 py-2 text-sm text-slate-400 ring-1 ring-slate-700">
+            <div className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-muted ring-1 ring-hairline">
               Thinking…
             </div>
           </div>
@@ -119,13 +119,13 @@ export function ChatPanel({ engagementId }: { engagementId: string }) {
           onChange={(e) => setMessage(e.target.value)}
           disabled={sending}
           placeholder="Ask a follow-up about this engagement…"
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+          className="w-full rounded-lg border border-strong bg-surface px-3 py-2 text-sm text-ink-strong placeholder:text-ink-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
         />
         <button
           type="submit"
           data-testid="chat-send"
           disabled={sending || !message.trim()}
-          className="rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
         >
           {sending ? 'Sending…' : 'Send'}
         </button>

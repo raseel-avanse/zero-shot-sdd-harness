@@ -1,17 +1,22 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, listEngagements, type EngagementSummary } from '@/lib/api'
 import { RunView } from '@/components/RunView'
 import { ScopeForm } from '@/components/ScopeForm'
-import { ErrorBanner, Header } from '@/components/ui'
+import { AppShell, type SessionInfo, type ViewName } from '@/components/shell'
+import { Badge, Card, ErrorBanner } from '@/components/ui'
 
 type View = { name: 'list' } | { name: 'new' } | { name: 'run'; id: string }
+
+const IDLE_SESSION: SessionInfo = { running: false, cost: 0, model: 'Gemini' }
 
 export default function Home() {
   const [view, setView] = useState<View>({ name: 'list' })
   const [engagements, setEngagements] = useState<EngagementSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [session, setSession] = useState<SessionInfo>(IDLE_SESSION)
+  const [runContext, setRunContext] = useState<string>('')
 
   const refresh = useCallback(() => {
     setError(null)
@@ -27,41 +32,63 @@ export default function Home() {
     if (view.name === 'list') refresh()
   }, [view, refresh])
 
+  // Reset the shell session/context when leaving the run view.
+  const navigate = useCallback((next: ViewName) => {
+    if (next !== 'run') {
+      setSession(IDLE_SESSION)
+      setRunContext('')
+    }
+    setView(next === 'new' ? { name: 'new' } : { name: 'list' })
+  }, [])
+
+  const breadcrumb = useMemo(() => {
+    if (view.name === 'new') return 'New engagement'
+    if (view.name === 'run') return `Engagements / ${runContext || 'Assessment'}`
+    return 'Engagements'
+  }, [view, runContext])
+
+  const activeNav = view.name === 'new' ? 'new' : 'engagements'
+
+  const handleReport = useCallback((info: { name?: string; running: boolean; cost: number }) => {
+    setSession({ running: info.running, cost: info.cost, model: 'Gemini' })
+    if (info.name) setRunContext(info.name)
+  }, [])
+
   return (
-    <>
-      <Header
-        subtitle={
-          view.name === 'new'
-            ? 'New engagement — define scope'
-            : view.name === 'run'
-              ? 'Run view'
-              : 'Security Assessment Console'
-        }
-      />
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        {view.name === 'list' && (
-          <EngagementsList
-            engagements={engagements}
-            error={error}
-            onNew={() => setView({ name: 'new' })}
-            onOpen={(id) => setView({ name: 'run', id })}
-            onRetry={refresh}
+    <AppShell
+      active={view.name}
+      activeNav={activeNav}
+      breadcrumb={breadcrumb}
+      session={session}
+      onNavigate={navigate}
+    >
+      {view.name === 'list' && (
+        <EngagementsList
+          engagements={engagements}
+          error={error}
+          onNew={() => setView({ name: 'new' })}
+          onOpen={(id) => setView({ name: 'run', id })}
+          onRetry={refresh}
+        />
+      )}
+      {view.name === 'new' && (
+        <section className="mx-auto max-w-2xl">
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold text-ink-strong">New engagement</h2>
+            <p className="mt-1 text-sm text-ink-muted">
+              Define the authorized scope. Sentinel refuses anything outside it in code.
+            </p>
+          </div>
+          <ScopeForm
+            onCreated={(id) => setView({ name: 'run', id })}
+            onCancel={() => setView({ name: 'list' })}
           />
-        )}
-        {view.name === 'new' && (
-          <section className="mx-auto max-w-2xl">
-            <h2 className="mb-6 text-2xl font-semibold text-slate-50">New engagement</h2>
-            <ScopeForm
-              onCreated={(id) => setView({ name: 'run', id })}
-              onCancel={() => setView({ name: 'list' })}
-            />
-          </section>
-        )}
-        {view.name === 'run' && (
-          <RunView engagementId={view.id} onBack={() => setView({ name: 'list' })} />
-        )}
-      </main>
-    </>
+        </section>
+      )}
+      {view.name === 'run' && (
+        <RunView engagementId={view.id} onBack={() => navigate('list')} onReport={handleReport} />
+      )}
+    </AppShell>
   )
 }
 
@@ -81,20 +108,23 @@ function EngagementsList({
   return (
     <section>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-slate-50">Engagements</h2>
+        <div>
+          <h2 className="text-2xl font-semibold text-ink-strong">Engagements</h2>
+          <p className="mt-1 text-sm text-ink-muted">Scope-gated, authorized security assessments.</p>
+        </div>
         <button
           onClick={onNew}
           data-testid="new-engagement"
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover"
         >
-          + New Engagement
+          New engagement
         </button>
       </div>
 
       {error && (
         <div className="space-y-3">
           <ErrorBanner message={error} />
-          <button onClick={onRetry} className="text-sm text-emerald-400 hover:text-emerald-300">
+          <button onClick={onRetry} className="text-sm font-medium text-primary hover:text-primary-hover">
             Retry
           </button>
         </div>
@@ -103,24 +133,24 @@ function EngagementsList({
       {!error && engagements === null && (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl border border-slate-800 bg-slate-900/40" />
+            <div key={i} className="h-[76px] animate-pulse rounded-xl border border-hairline bg-surface" />
           ))}
         </div>
       )}
 
       {!error && engagements?.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 px-6 py-16 text-center">
-          <p className="text-slate-300">No engagements yet</p>
-          <p className="mt-1 text-sm text-slate-500">
-            Create a scope-gated engagement to start an authorized assessment.
+        <Card className="px-6 py-16 text-center">
+          <p className="text-sm font-medium text-ink-strong">No engagements yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-ink-muted">
+            No engagements yet — create one to begin an authorized, scope-gated assessment.
           </p>
           <button
             onClick={onNew}
-            className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover"
           >
-            + New Engagement
+            New engagement
           </button>
-        </div>
+        </Card>
       )}
 
       {!error && engagements && engagements.length > 0 && (
@@ -129,11 +159,11 @@ function EngagementsList({
             <li key={e.engagement_id}>
               <button
                 onClick={() => onOpen(e.engagement_id)}
-                className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-5 py-4 text-left transition hover:border-emerald-500/50 hover:bg-slate-900"
+                className="flex w-full items-center justify-between rounded-xl border border-hairline bg-surface px-5 py-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
               >
-                <div>
-                  <p className="font-medium text-slate-100">{e.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink-strong">{e.name}</p>
+                  <p className="mt-0.5 font-mono text-xs text-ink-muted">
                     {e.target_type} · created {formatDate(e.created_at)}
                   </p>
                 </div>
@@ -148,18 +178,14 @@ function EngagementsList({
 }
 
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: 'bg-slate-700/50 text-slate-300',
-    running: 'bg-amber-500/15 text-amber-300',
-    complete: 'bg-emerald-500/15 text-emerald-300',
-    completed: 'bg-emerald-500/15 text-emerald-300',
-    failed: 'bg-red-500/15 text-red-300',
+  const tone: Record<string, 'neutral' | 'primary' | 'success' | 'warning'> = {
+    draft: 'neutral',
+    running: 'warning',
+    complete: 'success',
+    completed: 'success',
+    failed: 'warning',
   }
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-medium ${map[status] ?? map.draft}`}>
-      {status}
-    </span>
-  )
+  return <Badge tone={tone[status] ?? 'neutral'}>{status}</Badge>
 }
 
 function formatDate(iso: string) {

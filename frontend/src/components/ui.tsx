@@ -1,79 +1,103 @@
 'use client'
 
+import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-export function Header({ subtitle }: { subtitle?: string }) {
-  return (
-    <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl items-center gap-3 px-6 py-4">
-        <span className="grid h-9 w-9 place-items-center rounded-md bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30">
-          <ShieldIcon />
-        </span>
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-slate-50">Sentinel</h1>
-          <p className="text-xs text-slate-400">{subtitle ?? 'Security Assessment Console'}</p>
-        </div>
-      </div>
-    </header>
-  )
+// ── Severity signal scale ──────────────────────────────────────────────────
+// Meaningful (not decorative): drives rails, chips, tiles and the meter.
+export type SeverityKey = 'critical' | 'high' | 'medium' | 'low' | 'info'
+
+export const SEVERITY_ORDER: SeverityKey[] = ['critical', 'high', 'medium', 'low', 'info']
+
+const SEVERITY: Record<SeverityKey, { solid: string; tint: string; ink: string }> = {
+  critical: { solid: '#d92d20', tint: '#fef3f2', ink: '#912018' },
+  high: { solid: '#dc6803', tint: '#fffaeb', ink: '#93370d' },
+  medium: { solid: '#ca8504', tint: '#fefbe8', ink: '#854a0e' },
+  low: { solid: '#475467', tint: '#f2f4f7', ink: '#344054' },
+  info: { solid: '#4f46e5', tint: '#eef2ff', ink: '#3730a3' },
 }
 
-function ShieldIcon() {
+export function severityKey(label: string | null | undefined): SeverityKey {
+  const k = (label ?? 'info').toLowerCase()
+  return (SEVERITY_ORDER as string[]).includes(k) ? (k as SeverityKey) : 'info'
+}
+
+export function severityStyle(key: SeverityKey) {
+  return SEVERITY[key]
+}
+
+// ── Icons (inline, no network) ──────────────────────────────────────────────
+export function ShieldIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z" />
       <path d="M9 12l2 2 4-4" />
     </svg>
   )
 }
 
-/** Clearly-labelled non-functional stub for a later phase. */
-export function StubBadge({ phase }: { phase: 'P2' | 'P3' }) {
+// ── Generic pill badge ───────────────────────────────────────────────────────
+export function Badge({
+  children,
+  tone = 'neutral',
+  mono = false,
+}: {
+  children: ReactNode
+  tone?: 'neutral' | 'primary' | 'success' | 'warning'
+  mono?: boolean
+}) {
+  const tones: Record<string, string> = {
+    neutral: 'bg-canvas text-ink-muted ring-hairline',
+    primary: 'bg-primary-tint text-primary ring-primary/25',
+    success: 'text-[#067647] ring-[#067647]/25 bg-[#ecfdf3]',
+    warning: 'text-[#b54708] ring-[#b54708]/25 bg-[#fffaeb]',
+  }
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400 ring-1 ring-amber-500/30"
-      title={`Coming in Phase ${phase[1]} — not yet functional`}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ${
+        mono ? 'font-mono' : ''
+      } ${tones[tone]}`}
     >
-      Coming in Phase {phase[1]} · not yet functional
+      {children}
     </span>
   )
 }
 
-export function ErrorBanner({ message }: { message: string }) {
+// ── Severity chip (tinted) ───────────────────────────────────────────────────
+export function SeverityChip({ label }: { label: string }) {
+  const key = severityKey(label)
+  const s = SEVERITY[key]
+  const style: CSSProperties = { background: s.tint, color: s.ink, boxShadow: `inset 0 0 0 1px ${s.solid}33` }
   return (
-    <div
-      role="alert"
-      className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+      style={style}
     >
-      {message}
-    </div>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.solid }} />
+      {label || 'info'}
+    </span>
   )
 }
 
-const SEVERITY_STYLES: Record<string, string> = {
-  critical: 'bg-red-500/15 text-red-300 ring-red-500/40',
-  high: 'bg-orange-500/15 text-orange-300 ring-orange-500/40',
-  medium: 'bg-amber-500/15 text-amber-300 ring-amber-500/40',
-  low: 'bg-sky-500/15 text-sky-300 ring-sky-500/40',
-  info: 'bg-slate-500/15 text-slate-300 ring-slate-500/40',
-}
-
+/** Severity chip + a mono CVSS badge (technical data → mono). */
 export function SeverityBadge({ label, cvss }: { label: string; cvss: number | null }) {
-  const key = (label || 'info').toLowerCase()
-  const cls = SEVERITY_STYLES[key] ?? SEVERITY_STYLES.info
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ring-1 ${cls}`}>
-      {label || 'info'}
-      {cvss != null && <span className="font-mono text-[11px] opacity-80">CVSS {cvss.toFixed(1)}</span>}
+    <span className="inline-flex items-center gap-1.5">
+      <SeverityChip label={label} />
+      {cvss != null && (
+        <span className="rounded-md bg-canvas px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink ring-1 ring-hairline">
+          CVSS {cvss.toFixed(1)}
+        </span>
+      )}
     </span>
   )
 }
 
 const CONFIDENCE_STYLES: Record<string, string> = {
-  confirmed: 'text-emerald-400 ring-emerald-500/40',
-  tentative: 'text-amber-400 ring-amber-500/40',
-  unconfirmed: 'text-slate-400 ring-slate-500/40',
+  confirmed: 'text-[#067647] ring-[#067647]/30 bg-[#ecfdf3]',
+  tentative: 'text-[#b54708] ring-[#b54708]/30 bg-[#fffaeb]',
+  unconfirmed: 'text-ink-muted ring-hairline bg-canvas',
 }
 
 export function ConfidenceBadge({ confidence }: { confidence: string }) {
@@ -86,9 +110,62 @@ export function ConfidenceBadge({ confidence }: { confidence: string }) {
   )
 }
 
+// ── Severity summary tile (count per severity) ───────────────────────────────
+export function Tile({ severity, count }: { severity: SeverityKey; count: number }) {
+  const s = SEVERITY[severity]
+  const on = count > 0
+  return (
+    <div
+      className="flex flex-col gap-1 rounded-lg border p-3 transition"
+      style={{
+        borderColor: on ? `${s.solid}55` : 'var(--color-hairline)',
+        background: on ? s.tint : 'var(--color-surface)',
+      }}
+    >
+      <span className="font-mono text-2xl font-semibold leading-none" style={{ color: on ? s.ink : '#98a2b3' }}>
+        {count}
+      </span>
+      <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: on ? s.ink : '#98a2b3' }}>
+        {severity}
+      </span>
+    </div>
+  )
+}
+
+// ── Surface card ─────────────────────────────────────────────────────────────
+export function Card({
+  children,
+  className = '',
+  ...rest
+}: { children: ReactNode; className?: string } & HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={`rounded-xl border border-hairline bg-surface shadow-sm ${className}`} {...rest}>
+      {children}
+    </div>
+  )
+}
+
+/** Clearly-labelled non-functional stub for a later phase. */
+export function StubBadge({ phase }: { phase: 'P2' | 'P3' }) {
+  return (
+    <Badge tone="warning">Coming in Phase {phase[1]} · not yet functional</Badge>
+  )
+}
+
+export function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-[#fda29b] bg-[#fef3f2] px-4 py-3 text-sm text-[#912018]"
+    >
+      {message}
+    </div>
+  )
+}
+
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="prose-console text-sm leading-relaxed text-slate-300">
+    <div className="prose-console text-sm leading-relaxed text-ink">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{children || ''}</ReactMarkdown>
     </div>
   )

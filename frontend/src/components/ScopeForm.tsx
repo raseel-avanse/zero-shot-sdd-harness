@@ -71,13 +71,13 @@ export function ScopeForm({
     }
   }
 
-  const labelCls = 'block text-sm font-medium text-slate-300'
+  const labelCls = 'block text-sm font-medium text-ink'
   const inputCls =
-    'mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500'
+    'mt-1.5 w-full rounded-lg border border-strong bg-surface px-3 py-2 text-sm text-ink-strong placeholder:text-ink-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
 
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
-      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-xs text-emerald-300">
+      <div className="rounded-lg border border-primary/25 bg-primary-tint px-4 py-3 text-xs text-primary">
         Safety-critical: Sentinel will only read paths inside the authorized-targets allowlist. Anything
         outside it is refused in code before any assessment runs.
       </div>
@@ -102,8 +102,8 @@ export function ScopeForm({
           <label
             className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
               !isLive
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-slate-100'
-                : 'border-slate-700 text-slate-400'
+                ? 'border-primary/40 bg-primary-tint text-ink-strong'
+                : 'border-strong text-ink-muted'
             }`}
           >
             <input
@@ -118,8 +118,8 @@ export function ScopeForm({
             data-testid="target-type-live"
             className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
               isLive
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-slate-100'
-                : 'border-slate-700 text-slate-400'
+                ? 'border-primary/40 bg-primary-tint text-ink-strong'
+                : 'border-strong text-ink-muted'
             }`}
           >
             <input
@@ -136,7 +136,7 @@ export function ScopeForm({
       {isLive && (
         <div
           data-testid="live-nondestructive-notice"
-          className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-xs text-sky-300"
+          className="rounded-lg border border-primary/25 bg-primary-tint px-4 py-3 text-xs text-primary"
         >
           Live-app probing is <strong>non-destructive only</strong>: Sentinel issues read-only verbs
           (GET / HEAD / OPTIONS) against allowlisted hosts. State-changing requests and out-of-scope
@@ -160,7 +160,7 @@ export function ScopeForm({
 
       <div>
         <span className={labelCls}>Authorized targets (allowlist)</span>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-ink-muted">
           {isLive
             ? 'Only these hosts may be probed. The base URL above must be an allowlisted host.'
             : 'Only these paths may be read. The target path above must be inside one of them.'}
@@ -179,7 +179,7 @@ export function ScopeForm({
                 type="button"
                 onClick={() => removeAllow(i)}
                 disabled={allowlist.length === 1}
-                className="rounded-lg border border-slate-700 px-3 text-sm text-slate-400 hover:bg-slate-800 disabled:opacity-40"
+                className="rounded-lg border border-strong px-3 text-sm text-ink-muted hover:bg-canvas disabled:opacity-40"
                 aria-label={`Remove path row ${i + 1}`}
               >
                 Remove
@@ -190,7 +190,7 @@ export function ScopeForm({
         <button
           type="button"
           onClick={addAllow}
-          className="mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+          className="mt-2 rounded-lg border border-strong px-3 py-1.5 text-xs text-ink hover:bg-canvas"
         >
           + Add path
         </button>
@@ -227,7 +227,7 @@ export function ScopeForm({
         {fieldErrors.authorizedBy && <FieldError msg={fieldErrors.authorizedBy} />}
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-slate-300">
+      <label className="flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
           checked={nonDestructive}
@@ -242,14 +242,14 @@ export function ScopeForm({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create engagement'}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+          className="rounded-lg border border-strong px-5 py-2.5 text-sm text-ink hover:bg-canvas"
         >
           Cancel
         </button>
@@ -260,7 +260,7 @@ export function ScopeForm({
 
 function FieldError({ msg }: { msg: string }) {
   return (
-    <p role="alert" className="mt-1 text-xs text-red-400">
+    <p role="alert" className="mt-1 text-xs text-[#912018]">
       {msg}
     </p>
   )

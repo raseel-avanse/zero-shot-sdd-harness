@@ -1,11 +1,77 @@
 @import "tailwindcss";
 @source "../";
 
-:root {
-  color-scheme: dark;
+/* ── Sentinel enterprise design tokens (light theme) ───────────────────────
+   Exposed to Tailwind v4 via @theme so utilities like bg-surface / text-ink /
+   border-hairline are generated. Severity + sidebar tints are also mirrored as
+   plain CSS vars for inline-style use in signal components. */
+@theme {
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-hairline: #e4e7ec;
+  --color-strong: #d0d5dd;
+
+  --color-ink-strong: #0f172a;
+  --color-ink: #344054;
+  --color-ink-muted: #667085;
+
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-tint: #eef2ff;
+
+  --color-sidebar: #101828;
+  --color-sidebar-ink: #eaecf0;
+  --color-sidebar-muted: #98a2b3;
+  --color-sidebar-active: #1d2939;
+
+  --color-sev-critical: #d92d20;
+  --color-sev-high: #dc6803;
+  --color-sev-medium: #ca8504;
+  --color-sev-low: #475467;
+  --color-sev-info: #4f46e5;
+
+  --color-success: #067647;
+  --color-warning: #b54708;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo,
+    Consolas, monospace;
 }
 
-/* Markdown rendered blocks (LLM output) */
+:root {
+  color-scheme: light;
+
+  /* Severity signal scale + soft tints (for inline styles in signal UI). */
+  --sev-critical: #d92d20;
+  --sev-critical-tint: #fef3f2;
+  --sev-high: #dc6803;
+  --sev-high-tint: #fffaeb;
+  --sev-medium: #ca8504;
+  --sev-medium-tint: #fefbe8;
+  --sev-low: #475467;
+  --sev-low-tint: #f2f4f7;
+  --sev-info: #4f46e5;
+  --sev-info-tint: #eef2ff;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Visible keyboard focus rings (primary). */
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Markdown-rendered LLM prose on the light canvas. Humanizing copy in sans. */
+.prose-console {
+  font-family: var(--font-sans);
+}
 .prose-console p {
   margin: 0 0 0.5rem;
 }
@@ -14,15 +80,54 @@
   padding-left: 1.25rem;
   margin: 0 0 0.5rem;
 }
+.prose-console ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0 0 0.5rem;
+}
 .prose-console code {
-  background: rgb(30 41 59);
+  font-family: var(--font-mono);
+  background: var(--color-primary-tint);
+  color: #3730a3;
   padding: 0.1rem 0.3rem;
   border-radius: 0.25rem;
   font-size: 0.85em;
 }
 .prose-console pre {
-  background: rgb(2 6 23);
+  font-family: var(--font-mono);
+  background: #0f172a;
+  color: #e2e8f0;
   padding: 0.75rem;
   border-radius: 0.5rem;
   overflow-x: auto;
+}
+.prose-console pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+/* Subtle, purposeful finding-card stream-in. */
+@keyframes stream-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-stream-in {
+  animation: stream-in 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

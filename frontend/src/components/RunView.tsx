@@ -14,7 +14,15 @@ import {
 } from '@/lib/api'
 import { ChatPanel } from './ChatPanel'
 import { FindingCard } from './FindingCard'
-import { ErrorBanner } from './ui'
+import {
+  Card,
+  ErrorBanner,
+  SEVERITY_ORDER,
+  severityKey,
+  severityStyle,
+  Tile,
+  type SeverityKey,
+} from './ui'
 
 type StreamState = 'idle' | 'starting' | 'streaming' | 'reconnecting' | 'done' | 'error'
 
@@ -29,7 +37,16 @@ const EMPTY_PROGRESS: ProgressEvent = {
   estimated_cost_usd: 0,
 }
 
-export function RunView({ engagementId, onBack }: { engagementId: string; onBack: () => void }) {
+export function RunView({
+  engagementId,
+  onBack,
+  onReport,
+}: {
+  engagementId: string
+  onBack: () => void
+  /** Reports live run state up to the app shell (breadcrumb + session chips). */
+  onReport?: (info: { name?: string; running: boolean; cost: number }) => void
+}) {
   const [detail, setDetail] = useState<EngagementDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(true)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -168,6 +185,11 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
   const running = streamState === 'starting' || streamState === 'streaming' || streamState === 'reconnecting'
   const isLive = detail?.engagement.target_type === 'live_app'
 
+  // Push live run state up to the shell (breadcrumb name + session chips).
+  useEffect(() => {
+    onReport?.({ name: detail?.engagement.name, running, cost: progress.estimated_cost_usd })
+  }, [detail, running, progress.estimated_cost_usd, onReport])
+
   // Group findings that share a `pattern_ref` (same vulnerability pattern found
   // in ≥2 places). Only refs with >1 occurrence get a visible flag/label.
   const patternLabels = new Map<string, string>()
@@ -184,31 +206,33 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
 
   return (
     <div className="space-y-6">
-      <button onClick={onBack} className="text-sm text-slate-400 hover:text-slate-200">
+      <button onClick={onBack} className="text-sm font-medium text-ink-muted hover:text-ink">
         ← Back to engagements
       </button>
 
-      {loadingDetail && <p className="text-sm text-slate-400">Loading engagement…</p>}
+      {loadingDetail && <p className="text-sm text-ink-muted">Loading engagement…</p>}
       {detailError && <ErrorBanner message={detailError} />}
 
       {detail && (
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-50">{detail.engagement.name}</h2>
-          <p className="mt-1 font-mono text-sm text-emerald-400">{detail.scope_record.target_ref}</p>
-          {detail.scope_record.authorized_by && (
-            <p className="mt-1 text-xs text-slate-500">
-              Authorized by {detail.scope_record.authorized_by} ·{' '}
-              {detail.scope_record.non_destructive_only ? 'non-destructive only' : 'destructive allowed'}
-            </p>
-          )}
-          {isLive && (
-            <p
-              data-testid="live-probe-notice"
-              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30"
-            >
-              Live-app probe · read-only (GET / HEAD / OPTIONS), allowlisted hosts only
-            </p>
-          )}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-ink-strong">{detail.engagement.name}</h2>
+            <p className="mt-1 font-mono text-sm text-primary">{detail.scope_record.target_ref}</p>
+            {detail.scope_record.authorized_by && (
+              <p className="mt-1 text-xs text-ink-muted">
+                Authorized by {detail.scope_record.authorized_by} ·{' '}
+                {detail.scope_record.non_destructive_only ? 'non-destructive only' : 'destructive allowed'}
+              </p>
+            )}
+            {isLive && (
+              <p
+                data-testid="live-probe-notice"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary-tint px-2.5 py-1 text-xs font-medium text-primary ring-1 ring-primary/25"
+              >
+                Live-app probe · read-only (GET / HEAD / OPTIONS), allowlisted hosts only
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -217,7 +241,7 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
           onClick={handleStart}
           disabled={running || !detail}
           data-testid="start-assessment"
-          className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
         >
           {streamState === 'starting'
             ? 'Starting…'
@@ -225,17 +249,17 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
               ? 'Assessment running…'
               : streamState === 'done'
                 ? 'Run again'
-                : 'Start Assessment'}
+                : 'Start assessment'}
         </button>
         <div className="flex flex-wrap items-center gap-2" data-testid="export-dossier">
-          <span className="text-sm text-slate-400">Export dossier:</span>
+          <span className="text-sm text-ink-muted">Export dossier:</span>
           {(['md', 'pdf', 'json'] as const).map((fmt) => (
             <a
               key={fmt}
               href={exportUrl(engagementId, fmt)}
               download
               data-testid={`export-${fmt}`}
-              className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 hover:border-emerald-500/50 hover:bg-slate-800"
+              className="rounded-lg border border-strong bg-surface px-3 py-2 font-mono text-xs font-medium text-ink transition hover:border-primary/50 hover:bg-primary-tint"
               title={`Download the engagement dossier as ${fmt.toUpperCase()}`}
             >
               {fmt.toUpperCase()}
@@ -246,30 +270,32 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
 
       {startError && <ErrorBanner message={startError} />}
 
+      <SeveritySummary findings={findings} />
+
       {(running || streamState === 'done' || streamState === 'error') && (
         <ProgressPanel progress={progress} state={streamState} />
       )}
 
       {streamState === 'reconnecting' && (
-        <p className="text-sm text-amber-400">Stream interrupted — reconnecting…</p>
+        <p className="text-sm text-warning">Stream interrupted — reconnecting…</p>
       )}
       {runError && <ErrorBanner message={runError} />}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Findings {findings.length > 0 && <span className="text-slate-500">({findings.length})</span>}
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">
+            Findings {findings.length > 0 && <span className="text-ink-muted/70">({findings.length})</span>}
           </h3>
         </div>
 
         {findings.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 px-6 py-12 text-center">
+          <Card className="px-6 py-12 text-center">
             {running ? (
-              <p className="text-sm text-slate-400">Hunting for vulnerabilities — findings will stream in as they are validated…</p>
+              <p className="text-sm text-ink-muted">Hunting for vulnerabilities — findings will stream in as they are validated…</p>
             ) : (
-              <p className="text-sm text-slate-400">No findings yet — start an assessment.</p>
+              <p className="text-sm text-ink-muted">No findings yet — start an assessment.</p>
             )}
-          </div>
+          </Card>
         ) : (
           <div className="space-y-4">
             {findings.map((f) => (
@@ -285,7 +311,7 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
         )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-2">
         <ChatPanel engagementId={engagementId} />
         <SuggestionsPanel suggestions={suggestions} state={streamState} />
       </section>
@@ -293,50 +319,89 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
   )
 }
 
+/** Triage-first severity summary: colored count tiles + a segmented meter. */
+function SeveritySummary({ findings }: { findings: Finding[] }) {
+  const counts = SEVERITY_ORDER.reduce(
+    (acc, k) => ({ ...acc, [k]: 0 }),
+    {} as Record<SeverityKey, number>,
+  )
+  for (const f of findings) counts[severityKey(f.severity_label)] += 1
+  const total = findings.length
+
+  return (
+    <Card className="p-5" >
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">Severity summary</h3>
+        <span className="font-mono text-xs text-ink-muted">{total} total</span>
+      </div>
+
+      {total === 0 ? (
+        <p className="text-sm text-ink-muted">No findings yet — the summary populates as findings are validated.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {SEVERITY_ORDER.map((k) => (
+              <Tile key={k} severity={k} count={counts[k]} />
+            ))}
+          </div>
+          <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-canvas ring-1 ring-hairline">
+            {SEVERITY_ORDER.map((k) =>
+              counts[k] > 0 ? (
+                <div
+                  key={k}
+                  style={{ width: `${(counts[k] / total) * 100}%`, background: severityStyle(k).solid }}
+                  title={`${k}: ${counts[k]}`}
+                />
+              ) : null,
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
 function SuggestionsPanel({ suggestions, state }: { suggestions: string[]; state: StreamState }) {
   return (
-    <div
-      data-testid="suggestions-panel"
-      className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
-    >
-      <h4 className="mb-2 text-sm font-semibold text-slate-300">Suggested next probes</h4>
+    <Card data-testid="suggestions-panel" className="p-4">
+      <h4 className="mb-2 text-sm font-semibold text-ink-strong">Suggested next probes</h4>
       {suggestions.length > 0 ? (
         <ul className="space-y-2" data-testid="suggestions-list">
           {suggestions.map((s, i) => (
             <li
               key={i}
               data-testid="suggestion-item"
-              className="flex gap-2 rounded-lg bg-slate-800/50 px-3 py-2 text-sm text-slate-200 ring-1 ring-slate-700/60"
+              className="flex gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink ring-1 ring-hairline"
             >
-              <span className="text-emerald-400">→</span>
+              <span className="text-primary">→</span>
               <span>{s}</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-ink-muted">
           {state === 'done'
             ? 'No further probes suggested — the target surface has been covered.'
             : 'After a run, Sentinel suggests the highest-value next probes and flags the same vulnerability pattern elsewhere in the target.'}
         </p>
       )}
-    </div>
+    </Card>
   )
 }
 
 function ProgressPanel({ progress, state }: { progress: ProgressEvent; state: StreamState }) {
   const pct = progress.step_budget ? Math.min(100, (progress.step_count / progress.step_budget) * 100) : 0
   return (
-    <div className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-5 sm:grid-cols-2">
+    <Card className="grid gap-5 p-5 sm:grid-cols-2">
       <div>
         <div className="flex items-baseline justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Progress</span>
-          <span className="font-mono text-sm text-slate-200" data-testid="step-counter">
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Progress</span>
+          <span className="font-mono text-sm text-ink-strong" data-testid="step-counter">
             step {progress.step_count} / {progress.step_budget || '—'}
           </span>
         </div>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-800">
-          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-canvas ring-1 ring-hairline">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
         <dl className="mt-3 space-y-1 text-sm">
           <Row label="Phase" value={progress.current_phase ?? (state === 'done' ? 'complete' : '—')} />
@@ -344,26 +409,27 @@ function ProgressPanel({ progress, state }: { progress: ProgressEvent; state: St
         </dl>
       </div>
       <div>
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Token &amp; cost</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Token &amp; cost</span>
         <dl className="mt-2 space-y-1 font-mono text-sm">
-          <Row label="Prompt" value={progress.prompt_tokens.toLocaleString()} />
-          <Row label="Completion" value={progress.completion_tokens.toLocaleString()} />
-          <Row label="Total tokens" value={progress.total_tokens.toLocaleString()} />
+          <Row label="Prompt" value={progress.prompt_tokens.toLocaleString()} mono />
+          <Row label="Completion" value={progress.completion_tokens.toLocaleString()} mono />
+          <Row label="Total tokens" value={progress.total_tokens.toLocaleString()} mono />
           <Row
             label="Est. cost"
+            mono
             value={<span data-testid="est-cost">${progress.estimated_cost_usd.toFixed(4)}</span>}
           />
         </dl>
       </div>
-    </div>
+    </Card>
   )
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="text-slate-200">{value}</dd>
+      <dt className={`text-ink-muted ${mono ? 'font-sans' : ''}`}>{label}</dt>
+      <dd className="text-ink-strong">{value}</dd>
     </div>
   )
 }
