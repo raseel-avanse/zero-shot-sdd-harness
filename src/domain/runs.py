@@ -26,6 +26,7 @@ class RunStatusResponse(BaseModel):
     total_tokens: int
     estimated_cost_usd: float
     error_message: str | None = None
+    next_probes: list[str] = []
 
 
 class RunCostResponse(BaseModel):

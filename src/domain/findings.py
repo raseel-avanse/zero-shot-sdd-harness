@@ -21,6 +21,7 @@ class FindingOut(BaseModel):
     status: str
     remediation: str
     suggested_patch: str | None = None
+    pattern_ref: str | None = None
     created_at: datetime
     updated_at: datetime
 

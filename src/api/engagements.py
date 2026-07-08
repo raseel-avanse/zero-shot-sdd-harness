@@ -135,6 +135,7 @@ def list_findings(engagement_id: str, session: Session = Depends(get_session)) -
             status=f.status,
             remediation=f.remediation,
             suggested_patch=f.suggested_patch,
+            pattern_ref=f.pattern_ref,
             created_at=f.created_at,
             updated_at=f.updated_at,
         ).model_dump()

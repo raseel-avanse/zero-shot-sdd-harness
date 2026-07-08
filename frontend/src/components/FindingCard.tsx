@@ -1,21 +1,48 @@
 'use client'
 
 import { useState } from 'react'
-import { ApiError, retestFinding, type Finding } from '@/lib/api'
-import { ConfidenceBadge, Markdown, SeverityBadge, StubBadge } from './ui'
+import {
+  ApiError,
+  retestFinding,
+  updateFindingStatus,
+  type Finding,
+  type FindingStatus,
+} from '@/lib/api'
+import { ConfidenceBadge, Markdown, SeverityBadge } from './ui'
 
-const STATUS_LABELS = ['new', 'validated', 'remediated', 'false_positive']
+const STATUS_LABELS: FindingStatus[] = ['new', 'validated', 'remediated', 'false_positive']
 
 export function FindingCard({
   finding,
+  patternLabel,
   onRetested,
+  onStatusChanged,
 }: {
   finding: Finding
+  /** Set when this finding shares a `pattern_ref` with others — flags the group. */
+  patternLabel?: string
   onRetested?: (id: string, status: string, confidence: string, evidence?: string) => void
+  onStatusChanged?: (id: string, status: string) => void
 }) {
   const [retesting, setRetesting] = useState(false)
   const [retestError, setRetestError] = useState<string | null>(null)
   const [retestNote, setRetestNote] = useState<string | null>(null)
+  const [statusUpdating, setStatusUpdating] = useState<FindingStatus | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
+
+  async function handleStatus(next: FindingStatus) {
+    if (next === finding.status || statusUpdating) return
+    setStatusError(null)
+    setStatusUpdating(next)
+    try {
+      const updated = await updateFindingStatus(finding.id, next)
+      onStatusChanged?.(finding.id, updated.status ?? next)
+    } catch (err) {
+      setStatusError(err instanceof ApiError ? err.message : 'Could not update status.')
+    } finally {
+      setStatusUpdating(null)
+    }
+  }
 
   async function handleRetest() {
     setRetestError(null)
@@ -49,6 +76,15 @@ export function FindingCard({
               {finding.category}
             </span>
             <ConfidenceBadge confidence={finding.confidence} />
+            {patternLabel && (
+              <span
+                data-testid="pattern-flag"
+                title="Same vulnerability pattern found elsewhere in this target"
+                className="inline-flex items-center gap-1 rounded-md bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-300 ring-1 ring-fuchsia-500/30"
+              >
+                ⛓ {patternLabel}
+              </span>
+            )}
           </div>
           <h3 className="mt-2 text-base font-semibold text-slate-50">{finding.title}</h3>
           <p className="mt-0.5 font-mono text-xs text-emerald-400" data-testid="finding-location">
@@ -86,22 +122,30 @@ export function FindingCard({
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
-        {/* Read-only status controls — full lifecycle editing is P3 */}
-        <div className="flex items-center gap-1.5">
-          {STATUS_LABELS.map((s) => (
-            <span
-              key={s}
-              data-testid={s === finding.status ? 'finding-status-active' : undefined}
-              className={`rounded px-2 py-0.5 text-[11px] ${
-                s === finding.status
-                  ? 'bg-slate-700 text-slate-100'
-                  : 'bg-slate-800/40 text-slate-500'
-              }`}
-            >
-              {s.replace('_', ' ')}
-            </span>
-          ))}
-          <StubBadge phase="P3" />
+        {/* Finding status lifecycle — click to transition; persists via PATCH. */}
+        <div className="flex items-center gap-1.5" data-testid="status-controls" role="group" aria-label="Finding status">
+          {STATUS_LABELS.map((s) => {
+            const active = s === finding.status
+            const busy = statusUpdating === s
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => handleStatus(s)}
+                disabled={active || statusUpdating !== null}
+                aria-pressed={active}
+                data-testid={active ? 'finding-status-active' : `status-${s}`}
+                className={`rounded px-2 py-0.5 text-[11px] transition ${
+                  active
+                    ? 'bg-emerald-600/25 text-emerald-200 ring-1 ring-emerald-500/40'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700 hover:text-slate-100 disabled:opacity-50'
+                }`}
+                title={active ? `Current status: ${s.replace('_', ' ')}` : `Mark as ${s.replace('_', ' ')}`}
+              >
+                {busy ? 'Saving…' : s.replace('_', ' ')}
+              </button>
+            )
+          })}
         </div>
         <button
           type="button"
@@ -123,6 +167,11 @@ export function FindingCard({
       {retestError && (
         <p className="mt-2 text-xs text-red-400" role="alert">
           {retestError}
+        </p>
+      )}
+      {statusError && (
+        <p className="mt-2 text-xs text-red-400" role="alert">
+          {statusError}
         </p>
       )}
     </article>

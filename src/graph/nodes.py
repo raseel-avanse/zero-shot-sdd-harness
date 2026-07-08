@@ -7,12 +7,15 @@ never tool routing. scope_guard is enforced in code regardless of LLM output.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+from sqlalchemy import select
 
 from db.models import AssessmentRun, Finding
 from db.session import create_db_session
@@ -534,13 +537,160 @@ def _persist_finding(state: AgentState, finding: dict) -> None:
         )
 
 
+# --------------------------------------------------------------------------- #
+# Report-node helpers (Phase 3): proactive next-probe suggestions +
+# same-pattern-elsewhere flagging.
+# --------------------------------------------------------------------------- #
+
+# Low-signal words dropped when normalizing a finding title into a pattern
+# signature, so titles like "SQL injection in the login handler" and "SQL
+# injection in login handler" collapse to the same signature.
+_SIG_STOPWORDS = {
+    "the", "a", "an", "in", "on", "of", "via", "and", "to", "for", "with",
+    "at", "by", "from", "into", "over", "using", "when", "vulnerability",
+    "issue", "possible", "potential",
+}
+
+
+def _pattern_signature(title: str) -> str:
+    """Normalize a finding title into a stable, order-independent token signature.
+
+    Keys on the vulnerability *type*, not the specific sink location, so
+    "SQL Injection in get_user" and "SQL Injection in search" collapse to the
+    same signature (and link as the same pattern), while "Command Injection ..."
+    stays distinct. The location clause after a positional preposition
+    (in/at/on/within/inside/under) is dropped before tokenizing.
+    """
+    text = (title or "").lower()
+    text = re.split(r"\b(?:in|at|on|within|inside|under)\b", text, maxsplit=1)[0]
+    words = re.findall(r"[a-z0-9]+", text)
+    sig = sorted({w for w in words if len(w) >= 3 and w not in _SIG_STOPWORDS})
+    return " ".join(sig)
+
+
+def _pattern_ref(category: str, title: str) -> str:
+    """Deterministic shared key for findings of the same category + pattern.
+
+    Two findings with the same category and equivalent normalized title signature
+    receive an identical `pattern_ref` (linking duplicate-pattern occurrences);
+    unrelated findings receive distinct refs. Purely deterministic — no LLM.
+    """
+    raw = f"{category or 'unknown'}|{_pattern_signature(title)}"
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{category or 'unknown'}-{digest}"
+
+
+def _assign_pattern_refs(findings: list[dict]) -> None:
+    """Mutate each finding dict in place, attaching a grouping `pattern_ref`."""
+    for f in findings:
+        if isinstance(f, dict):
+            f["pattern_ref"] = _pattern_ref(f.get("category", ""), f.get("title", ""))
+
+
+def _persist_pattern_refs(state: AgentState) -> None:
+    """Recompute + write `pattern_ref` onto this run's persisted Finding rows."""
+    run_id = state.get("run_id")
+    if not run_id:
+        return
+    try:
+        with create_db_session() as session:
+            rows = session.execute(
+                select(Finding).where(Finding.run_id == run_id)
+            ).scalars().all()
+            for row in rows:
+                row.pattern_ref = _pattern_ref(row.category, row.title)
+    except Exception:  # noqa: BLE001 — pattern linking must not crash the run
+        log.exception("pattern_ref persistence failed", extra={"run_id": run_id})
+
+
+def _suggest_next_probes(state: AgentState, findings: list[dict]) -> list[str]:
+    """One cheap (fast-tier) LLM call producing >=2 concrete next-probe strings.
+
+    Failure/parse errors degrade to an empty list rather than crashing the run;
+    the report still completes. Token/cost usage is folded back into `state`.
+    """
+    summary = [
+        {
+            "category": f.get("category"),
+            "title": f.get("title"),
+            "severity_label": f.get("severity_label"),
+            "location": f.get("location"),
+            "confidence": f.get("confidence"),
+        }
+        for f in findings
+        if isinstance(f, dict)
+    ]
+    try:
+        usage = LLMClient().complete(
+            "Validated findings (JSON):\n"
+            + json.dumps(summary)[:8000]
+            + "\n\nRecon summary (JSON):\n"
+            + json.dumps(state.get("recon", {}))[:4000],
+            system=_load_prompt("suggest.md"),
+            tier="fast",
+        )
+        state.update(_accumulate(state, usage))
+        parsed = _parse_json(usage.get("text", ""))
+        if isinstance(parsed, dict):
+            raw = parsed.get("suggestions", [])
+        elif isinstance(parsed, list):
+            raw = parsed
+        else:
+            raw = []
+
+        out: list[str] = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get("suggestion") or item.get("text") or item.get("description")
+                if isinstance(text, str) and text.strip():
+                    out.append(text.strip())
+        return out
+    except Exception:  # noqa: BLE001 — suggestions are best-effort
+        log.exception("suggest next-probes failed", extra={"run_id": state.get("run_id")})
+        return []
+
+
 def report(state: AgentState) -> AgentState:
-    """Finalize: mark the run completed with final token/cost totals."""
-    update = {"status": "completed", "current_phase": "report"}
+    """Finalize the run: same-pattern-elsewhere linking + proactive next-probe
+    suggestions, then mark the run completed with final token/cost totals.
+
+    - Deterministically groups findings sharing a category + normalized pattern
+      signature and links them via a shared `pattern_ref` (persisted on rows).
+    - Runs ONE fast LLM call for >=2 concrete next-probe suggestions, persisted
+      on the run so GET /runs and the SSE stream can surface them.
+    """
+    step = int(state.get("step_count", 0)) + 1
+    findings = list(state.get("findings", []))
+
+    # (1) Same-pattern-elsewhere flagging — deterministic, no LLM.
+    _assign_pattern_refs(findings)
+    _persist_pattern_refs(state)
+
+    # (2) Proactive next-probe suggestions — one cheap LLM call.
+    run_state = {**state}
+    suggestions = _suggest_next_probes(run_state, findings)
+
+    update = {
+        "status": "completed",
+        "current_phase": "report",
+        "step_count": step,
+        "findings": findings,
+        "suggestions": suggestions,
+        "prompt_tokens": run_state.get("prompt_tokens", state.get("prompt_tokens", 0)),
+        "completion_tokens": run_state.get(
+            "completion_tokens", state.get("completion_tokens", 0)
+        ),
+        "estimated_cost_usd": run_state.get(
+            "estimated_cost_usd", state.get("estimated_cost_usd", 0.0)
+        ),
+    }
     _persist_progress(
         {**state, **update},
         status="completed",
         completed_at=_now(),
+        suggestions=suggestions,
     )
     return update
 

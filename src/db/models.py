@@ -114,6 +114,9 @@ class AssessmentRun(Base):
         Numeric(10, 6), nullable=False, default=0
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Proactive next-probe suggestions produced by the report node (Phase 3):
+    # a JSON array of concrete "what to investigate next" strings.
+    suggestions: Mapped[list] = mapped_column(_JSON, nullable=False, default=list)
     started_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )

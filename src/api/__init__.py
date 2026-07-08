@@ -14,12 +14,13 @@ async def _lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Agent", version="0.1.0", lifespan=_lifespan)
-    from api import chat, engagements, findings, health, runs
+    from api import chat, engagements, export, findings, health, runs
     app.include_router(health.router)
     app.include_router(engagements.router)
     app.include_router(runs.router)
     app.include_router(findings.router)
     app.include_router(chat.router)
+    app.include_router(export.router)
 
     # Serve the built Next.js static export at /app
     # Run `cd frontend && pnpm build` to generate frontend/out/ before starting.

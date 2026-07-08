@@ -25,6 +25,7 @@ class AgentState(TypedDict, total=False):
     priorities: list[str]         # ordered categories still to hunt
     candidate_findings: list[dict]
     findings: list[dict]          # validated (also persisted as produced)
+    suggestions: list[str]        # proactive next-probe suggestions (Phase 3, report node)
 
     # Cost accounting
     prompt_tokens: int

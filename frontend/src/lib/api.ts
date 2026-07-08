@@ -49,7 +49,12 @@ export interface Finding {
   remediation: string
   suggested_patch: string
   created_at: string
+  // [P3] Links same-pattern occurrences across the engagement. May be absent
+  // until the proactive-detection backend tags a finding — tolerate null.
+  pattern_ref?: string | null
 }
+
+export type FindingStatus = 'new' | 'validated' | 'remediated' | 'false_positive'
 
 export interface RunSnapshot {
   run_id: string
@@ -63,6 +68,9 @@ export interface RunSnapshot {
   total_tokens: number
   estimated_cost_usd: number
   error_message: string | null
+  // [P3] Proactive next-probe suggestions surfaced in run metadata. Absent until
+  // the report node emits them — tolerate missing/empty.
+  next_probes?: string[]
 }
 
 // SSE payload shapes (event names: progress | finding | done | error)
@@ -213,4 +221,32 @@ export async function retestFinding(findingId: string): Promise<RetestResult> {
     confidence: String(data.confidence ?? ''),
     evidence: typeof data.evidence === 'string' ? data.evidence : undefined,
   }
+}
+
+// ── Phase 3 ──────────────────────────────────────────────────────────────
+
+/**
+ * Same-origin path for the dossier export download. Served under `/app` by the
+ * frontend, but the API lives at the origin root, so we return a root-absolute
+ * path (bypasses Next's basePath) suitable for an anchor `href`. The response
+ * is a file download (`Content-Disposition: attachment`).
+ */
+export function exportUrl(engagementId: string, format: 'md' | 'pdf' | 'json'): string {
+  return `/engagements/${engagementId}/export?format=${format}`
+}
+
+/**
+ * `PATCH /findings/{id}` — advance a finding through its lifecycle. Request
+ * `{status}` → `ok({finding})`. Returns the updated finding; tolerant of the
+ * backend returning either the finding object directly or nested under `finding`.
+ */
+export async function updateFindingStatus(
+  findingId: string,
+  status: FindingStatus,
+): Promise<Finding> {
+  const data = await request<Finding | { finding: Finding }>(`/findings/${findingId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+  return 'finding' in data ? (data as { finding: Finding }).finding : (data as Finding)
 }

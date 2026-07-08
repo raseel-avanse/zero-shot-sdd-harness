@@ -52,6 +52,7 @@ def _finding_out(f: Finding) -> dict:
         status=f.status,
         remediation=f.remediation,
         suggested_patch=f.suggested_patch,
+        pattern_ref=f.pattern_ref,
         created_at=f.created_at,
         updated_at=f.updated_at,
     ).model_dump(mode="json")
@@ -134,6 +135,7 @@ def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
             total_tokens=run.total_tokens,
             estimated_cost_usd=float(run.estimated_cost_usd or 0),
             error_message=run.error_message,
+            next_probes=list(run.suggestions or []),
         ).model_dump()
     )
 
@@ -197,6 +199,8 @@ def _snapshot(run_id: str, seen_ids: set[str]) -> tuple[dict | None, list[dict],
             seen_ids.add(f.id)
         terminal = run.status if run.status in _TERMINAL else None
         error = run.error_message if run.status == "failed" else None
+        if terminal == "completed":
+            progress["next_probes"] = list(run.suggestions or [])
         return progress, new_findings, terminal, error
 
 
@@ -221,7 +225,10 @@ async def run_events(run_id: str, request: Request) -> StreamingResponse:
             for finding in new_findings:
                 yield _sse("finding", finding)
             if terminal == "completed":
-                yield _sse("done", {"status": "completed"})
+                yield _sse(
+                    "done",
+                    {"status": "completed", "next_probes": (progress or {}).get("next_probes", [])},
+                )
                 return
             if terminal == "failed":
                 yield _sse("error", {"message": error or "assessment failed"})

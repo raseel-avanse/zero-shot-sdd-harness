@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api._common import api_error, ok
@@ -41,6 +42,14 @@ router = APIRouter()
 _PROMPT_DIR = Path(__file__).parent.parent / "prompts"
 # Confidence values that mean the vulnerability still reproduces.
 _STILL_PRESENT = {"confirmed", "tentative"}
+# The documented finding-status lifecycle values (spec/data.md Finding.status).
+_ALLOWED_STATUSES = {"new", "validated", "remediated", "false_positive"}
+
+
+class StatusUpdate(BaseModel):
+    """Body for PATCH /findings/{finding_id} — set the lifecycle status."""
+
+    status: str
 
 
 def _now() -> datetime:
@@ -117,6 +126,7 @@ def _finding_out(f: Finding) -> FindingOut:
         status=f.status,
         remediation=f.remediation,
         suggested_patch=f.suggested_patch,
+        pattern_ref=f.pattern_ref,
         created_at=f.created_at,
         updated_at=f.updated_at,
     )
@@ -267,3 +277,39 @@ def retest_finding(
         finding=_finding_out(finding),
     )
     return ok(resp.model_dump())
+
+
+@router.patch("/findings/{finding_id}")
+def update_finding_status(
+    finding_id: str,
+    body: StatusUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Set a finding's lifecycle status (spec/roadmap.md Phase 3).
+
+    The UI drives the transition, so any documented status is a valid target —
+    no state machine. Invalid values -> 400; unknown finding -> 404. `updated_at`
+    refreshes automatically via the model's `onupdate`.
+    """
+    status = (body.status or "").strip()
+    if status not in _ALLOWED_STATUSES:
+        raise api_error(
+            "INVALID_STATUS",
+            f"status must be one of {sorted(_ALLOWED_STATUSES)}; got {body.status!r}",
+            400,
+        )
+
+    finding = session.get(Finding, finding_id)
+    if finding is None:
+        raise api_error("NOT_FOUND", f"finding {finding_id} not found", 404)
+
+    finding.status = status
+    session.flush()
+    session.refresh(finding)
+
+    log.info(
+        "finding status updated",
+        extra={"finding_id": finding_id, "status": status},
+    )
+
+    return ok(_finding_out(finding).model_dump())

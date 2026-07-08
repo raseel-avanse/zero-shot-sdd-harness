@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ApiError,
+  exportUrl,
   getEngagement,
+  getRun,
   listFindings,
   startRun,
   type EngagementDetail,
@@ -12,7 +14,7 @@ import {
 } from '@/lib/api'
 import { ChatPanel } from './ChatPanel'
 import { FindingCard } from './FindingCard'
-import { ErrorBanner, StubBadge } from './ui'
+import { ErrorBanner } from './ui'
 
 type StreamState = 'idle' | 'starting' | 'streaming' | 'reconnecting' | 'done' | 'error'
 
@@ -37,6 +39,7 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
   const [findings, setFindings] = useState<Finding[]>([])
   const [runError, setRunError] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -85,9 +88,28 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
       }
     })
 
-    es.addEventListener('done', () => {
+    es.addEventListener('done', (ev) => {
       setStreamState('done')
       es.close()
+      // Proactive next-probe suggestions may ride the done frame or land in run
+      // metadata. Tolerate either / neither — render nothing rather than crash.
+      let fromFrame: string[] | undefined
+      try {
+        const parsed = JSON.parse((ev as MessageEvent).data)
+        if (Array.isArray(parsed?.next_probes)) fromFrame = parsed.next_probes
+      } catch {
+        /* ignore */
+      }
+      if (fromFrame?.length) setSuggestions(fromFrame)
+      getRun(runId)
+        .then((snap) => {
+          if (Array.isArray(snap.next_probes) && snap.next_probes.length) {
+            setSuggestions(snap.next_probes)
+          }
+        })
+        .catch(() => {
+          /* run-metadata suggestions are optional */
+        })
     })
 
     es.addEventListener('error', (ev) => {
@@ -113,6 +135,7 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
     setStartError(null)
     setRunError(null)
     setFindings([])
+    setSuggestions([])
     setProgress(EMPTY_PROGRESS)
     setStreamState('starting')
     try {
@@ -138,8 +161,26 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
     )
   }
 
+  function handleStatusChanged(id: string, status: string) {
+    setFindings((prev) => prev.map((f) => (f.id === id ? { ...f, status } : f)))
+  }
+
   const running = streamState === 'starting' || streamState === 'streaming' || streamState === 'reconnecting'
   const isLive = detail?.engagement.target_type === 'live_app'
+
+  // Group findings that share a `pattern_ref` (same vulnerability pattern found
+  // in ≥2 places). Only refs with >1 occurrence get a visible flag/label.
+  const patternLabels = new Map<string, string>()
+  {
+    const counts = new Map<string, number>()
+    for (const f of findings) {
+      if (f.pattern_ref) counts.set(f.pattern_ref, (counts.get(f.pattern_ref) ?? 0) + 1)
+    }
+    let n = 0
+    for (const [ref, count] of counts) {
+      if (count > 1) patternLabels.set(ref, `Pattern ${String.fromCharCode(65 + n++)}`)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -186,14 +227,21 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
                 ? 'Run again'
                 : 'Start Assessment'}
         </button>
-        <button
-          disabled
-          className="cursor-not-allowed rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-500"
-          title="Export dossier — coming in Phase 3"
-        >
-          Export dossier (MD / PDF / JSON)
-        </button>
-        <StubBadge phase="P3" />
+        <div className="flex flex-wrap items-center gap-2" data-testid="export-dossier">
+          <span className="text-sm text-slate-400">Export dossier:</span>
+          {(['md', 'pdf', 'json'] as const).map((fmt) => (
+            <a
+              key={fmt}
+              href={exportUrl(engagementId, fmt)}
+              download
+              data-testid={`export-${fmt}`}
+              className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 hover:border-emerald-500/50 hover:bg-slate-800"
+              title={`Download the engagement dossier as ${fmt.toUpperCase()}`}
+            >
+              {fmt.toUpperCase()}
+            </a>
+          ))}
+        </div>
       </div>
 
       {startError && <ErrorBanner message={startError} />}
@@ -225,21 +273,53 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
         ) : (
           <div className="space-y-4">
             {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} onRetested={handleRetested} />
+              <FindingCard
+                key={f.id}
+                finding={f}
+                patternLabel={f.pattern_ref ? patternLabels.get(f.pattern_ref) : undefined}
+                onRetested={handleRetested}
+                onStatusChanged={handleStatusChanged}
+              />
             ))}
           </div>
         )}
       </section>
 
-      {/* Phase-2 chat is now real; next-probe suggestions remain a P3 stub. */}
       <section className="grid gap-4 sm:grid-cols-2">
         <ChatPanel engagementId={engagementId} />
-        <StubPanel title="Next-probe suggestions" phase="P3">
-          <p className="text-sm text-slate-500">
-            Sentinel will suggest the highest-value next probes and flag the same pattern elsewhere.
-          </p>
-        </StubPanel>
+        <SuggestionsPanel suggestions={suggestions} state={streamState} />
       </section>
+    </div>
+  )
+}
+
+function SuggestionsPanel({ suggestions, state }: { suggestions: string[]; state: StreamState }) {
+  return (
+    <div
+      data-testid="suggestions-panel"
+      className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+    >
+      <h4 className="mb-2 text-sm font-semibold text-slate-300">Suggested next probes</h4>
+      {suggestions.length > 0 ? (
+        <ul className="space-y-2" data-testid="suggestions-list">
+          {suggestions.map((s, i) => (
+            <li
+              key={i}
+              data-testid="suggestion-item"
+              className="flex gap-2 rounded-lg bg-slate-800/50 px-3 py-2 text-sm text-slate-200 ring-1 ring-slate-700/60"
+            >
+              <span className="text-emerald-400">→</span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-slate-500">
+          {state === 'done'
+            ? 'No further probes suggested — the target surface has been covered.'
+            : 'After a run, Sentinel suggests the highest-value next probes and flags the same vulnerability pattern elsewhere in the target.'}
+        </p>
+      )}
     </div>
   )
 }
@@ -284,18 +364,6 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-center justify-between gap-3">
       <dt className="text-slate-500">{label}</dt>
       <dd className="text-slate-200">{value}</dd>
-    </div>
-  )
-}
-
-function StubPanel({ title, phase, children }: { title: string; phase: 'P2' | 'P3'; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-400">{title}</h4>
-        <StubBadge phase={phase} />
-      </div>
-      {children}
     </div>
   )
 }
