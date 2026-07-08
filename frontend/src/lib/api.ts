@@ -150,3 +150,67 @@ export function getRun(runId: string) {
 export function listFindings(engagementId: string) {
   return request<Finding[]>(`/engagements/${engagementId}/findings`)
 }
+
+// ── Phase 2 ──────────────────────────────────────────────────────────────
+
+/**
+ * A chat turn = one user message paired with the assistant's reply, scoped to
+ * the engagement (conversation memory). `POST /engagements/{id}/chat` returns
+ * `{ reply, turn_id }`; we combine it with the message we sent to build a turn.
+ */
+export interface ChatTurn {
+  turn_id: string
+  message: string
+  reply: string
+  created_at?: string
+}
+
+/** `POST /engagements/{id}/chat` — request `{message}` → data `{reply, turn_id}`. */
+export async function sendChatMessage(engagementId: string, message: string): Promise<ChatTurn> {
+  const data = await request<{ reply: string; turn_id: string; created_at?: string }>(
+    `/engagements/${engagementId}/chat`,
+    { method: 'POST', body: JSON.stringify({ message }) },
+  )
+  return { turn_id: data.turn_id, message, reply: data.reply, created_at: data.created_at }
+}
+
+/**
+ * `GET /engagements/{id}/chat` — data `[{turn_id, message, reply, created_at}]`.
+ * Optional (may be unimplemented by the backend); callers tolerate failure and
+ * fall back to an empty history.
+ */
+export function listChatTurns(engagementId: string) {
+  return request<ChatTurn[]>(`/engagements/${engagementId}/chat`)
+}
+
+/**
+ * Normalised re-test result. `POST /findings/{id}/retest` re-runs validation
+ * for one finding and returns the updated status/confidence (status →
+ * `remediated` when the PoC no longer reproduces). The backend may return
+ * either the compact `{finding_id, confidence, status}` shape (spec/api.md) or
+ * a full updated finding object; this client accepts both, and surfaces a
+ * refreshed evidence block when the backend includes one.
+ */
+export interface RetestResult {
+  finding_id: string
+  status: string
+  confidence: string
+  evidence?: string
+}
+
+/** `POST /findings/{id}/retest` — tolerant of the compact and full-finding shapes. */
+export async function retestFinding(findingId: string): Promise<RetestResult> {
+  const data = await request<Record<string, unknown>>(`/findings/${findingId}/retest`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  // Full finding object (has finding-only keys) → normalise; else compact shape.
+  const isFullFinding = 'severity_label' in data || 'category' in data
+  const id = String(data.finding_id ?? (isFullFinding ? data.id : findingId) ?? findingId)
+  return {
+    finding_id: id,
+    status: String(data.status ?? ''),
+    confidence: String(data.confidence ?? ''),
+    evidence: typeof data.evidence === 'string' ? data.evidence : undefined,
+  }
+}

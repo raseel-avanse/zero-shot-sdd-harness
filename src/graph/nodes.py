@@ -12,11 +12,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
+
 from db.models import AssessmentRun, Finding
 from db.session import create_db_session
 from graph.state import AgentState
 from llm import cost as cost_mod
 from llm.client import LLMClient
+from tools import http_probe
 from tools import manifest as manifest_tool
 from tools import repo_walk, scope_guard
 from tools.read_excerpt import read_excerpt
@@ -32,6 +35,18 @@ _CATEGORIES = ["injection", "broken_auth", "secrets_misconfig", "vuln_deps"]
 # Bound how much source we feed the hunt LLM per category (cost + prompt size).
 _MAX_HUNT_FILES = 8
 _MAX_VALIDATE_FINDINGS = 12
+
+# Live-app probing bounds (Phase 2). Only safe, read-only informational paths
+# are probed by default; the LLM never chooses raw verbs/hosts — the in-code
+# http_probe guard is authoritative.
+_LIVE_RECON_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/.well-known/security.txt"]
+_MAX_LIVE_HUNT_PROBES = 6
+
+
+def _join_url(base: str, path: str) -> str:
+    if not path or path == "/":
+        return base.rstrip("/") + "/"
+    return base.rstrip("/") + "/" + path.lstrip("/")
 
 
 def _load_prompt(name: str) -> str:
@@ -122,6 +137,7 @@ def enforce_scope(state: AgentState) -> AgentState:
     """
     target = state.get("target_path", "")
     allowlist = state.get("scope_allowlist", []) or []
+    target_type = state.get("target_type", "repo")
     budget = int(state.get("step_budget") or cost_mod.step_budget())
 
     base = {
@@ -129,9 +145,12 @@ def enforce_scope(state: AgentState) -> AgentState:
         "step_count": int(state.get("step_count", 0)),
         "status": "running",
         "current_phase": "enforce_scope",
+        "target_type": target_type,
     }
 
-    if not scope_guard.check(target, allowlist):
+    # Dispatch to the correct in-code scope check: repo -> path containment,
+    # live_app -> host allowlist. Either way this is a pure code gate (no LLM).
+    if not scope_guard.check_target(target, allowlist, target_type):
         log.warning(
             "scope violation refused in code",
             extra={"run_id": state.get("run_id"), "target": target},
@@ -260,6 +279,144 @@ def hunt(state: AgentState) -> AgentState:
         # A single category failure is non-fatal: log, drop it, continue the loop.
         log.exception(
             "hunt failed for category", extra={"run_id": state.get("run_id"), "category": category}
+        )
+        return {
+            "priorities": priorities,
+            "candidate_findings": candidates,
+            "current_category": category,
+            "step_count": step,
+            "current_phase": "hunt",
+        }
+
+
+def live_recon(state: AgentState) -> AgentState:
+    """Read-only recon of a scope-approved LIVE target via non-destructive probes.
+
+    Issues ONLY safe verbs (GET/HEAD) against the base URL + a few common
+    informational paths, all host-guarded in code by http_probe. Feeds bounded
+    response metadata to the LLM (fast) for a tech summary. No raw dumps
+    persisted. Writes the same `recon` shape the shared prioritize node reads.
+    """
+    step = int(state.get("step_count", 0)) + 1
+    base = state.get("target_path", "")
+    allowlist = state.get("scope_allowlist", []) or []
+    try:
+        probes: list[dict] = []
+        with http_probe.Prober(allowlist) as prober:
+            # HEAD the base first (cheapest), then GET informational endpoints.
+            for path in _LIVE_RECON_PATHS:
+                url = _join_url(base, path)
+                method = "HEAD" if path == "/" else "GET"
+                try:
+                    probes.append(prober.probe(url, method=method))
+                    if path == "/":
+                        probes.append(prober.probe(url, method="GET"))
+                except http_probe.OutOfScopeError:
+                    # Never leave scope; skip anything outside the allowlist.
+                    continue
+                except http_probe.ProbeBudgetExceeded:
+                    break
+                except httpx.HTTPError:
+                    continue
+
+        inventory: dict = {
+            "target_type": "live_app",
+            "base_url": base,
+            "probes": probes,
+            # `endpoints` mirrors repo recon's `files` so the shared hunt/live
+            # paths and prioritize can consume a consistent recon shape.
+            "endpoints": [p["url"] for p in probes],
+        }
+
+        usage = LLMClient().complete(
+            f"Live-app probe metadata (JSON):\n{json.dumps(inventory)[:20000]}",
+            system=_load_prompt("live_probe.md"),
+            tier="fast",
+        )
+        parsed = _parse_json(usage.get("text", ""))
+        if isinstance(parsed, dict):
+            inventory["summary"] = parsed.get("summary", "")
+            inventory["frameworks"] = parsed.get("frameworks", [])
+            inventory["hotspot_endpoints"] = parsed.get("hotspot_endpoints", [])
+
+        update = {
+            "recon": inventory,
+            "step_count": step,
+            "current_phase": "recon",
+            **_accumulate(state, usage),
+        }
+        _persist_progress({**state, **update})
+        return update
+    except Exception as exc:  # noqa: BLE001
+        log.exception("live_recon failed", extra={"run_id": state.get("run_id")})
+        return {"step_count": step, "current_phase": "recon", "error": f"live_recon failed: {exc}"}
+
+
+def live_hunt(state: AgentState) -> AgentState:
+    """Hunt ONE category over a live target via non-destructive read-only probes.
+
+    Mirrors `hunt` but the evidence source is bounded HTTP response metadata
+    (GET/OPTIONS only, host-guarded) instead of source excerpts. Loops the same
+    way (conditional edge) while categories + budget remain.
+    """
+    step = int(state.get("step_count", 0)) + 1
+    priorities = list(state.get("priorities", []))
+    if not priorities:
+        return {"step_count": step, "current_phase": "hunt"}
+
+    category = priorities.pop(0)
+    recon_data = state.get("recon", {})
+    base = state.get("target_path", "")
+    allowlist = state.get("scope_allowlist", []) or []
+    candidates = list(state.get("candidate_findings", []))
+
+    try:
+        endpoints = (
+            recon_data.get("hotspot_endpoints")
+            or recon_data.get("endpoints")
+            or [_join_url(base, "/")]
+        )
+        observations: list[dict] = []
+        with http_probe.Prober(allowlist) as prober:
+            for url in endpoints[:_MAX_LIVE_HUNT_PROBES]:
+                for method in ("GET", "OPTIONS"):
+                    try:
+                        observations.append(prober.probe(url, method=method))
+                    except http_probe.OutOfScopeError:
+                        break  # skip this endpoint entirely — out of scope
+                    except http_probe.ProbeBudgetExceeded:
+                        break
+                    except httpx.HTTPError:
+                        continue
+
+        usage = LLMClient().complete(
+            f"Category: {category}\n\nLive probe observations (JSON):\n"
+            f"{json.dumps(observations)[:60000]}",
+            system=_load_prompt("hunt.md"),
+            tier="fast",
+        )
+        parsed = _parse_json(usage.get("text", ""))
+        found = parsed.get("candidates", []) if isinstance(parsed, dict) else []
+        for cand in found:
+            if isinstance(cand, dict):
+                cand["category"] = category
+                cand.setdefault("location", observations[0]["url"] if observations else base)
+                candidates.append(cand)
+
+        update = {
+            "priorities": priorities,
+            "candidate_findings": candidates,
+            "current_category": category,
+            "step_count": step,
+            "current_phase": "hunt",
+            **_accumulate(state, usage),
+        }
+        _persist_progress({**state, **update})
+        return update
+    except Exception as exc:  # noqa: BLE001
+        log.exception(
+            "live_hunt failed for category",
+            extra={"run_id": state.get("run_id"), "category": category},
         )
         return {
             "priorities": priorities,

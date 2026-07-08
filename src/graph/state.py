@@ -9,7 +9,8 @@ class AgentState(TypedDict, total=False):
     engagement_id: str
 
     # Input (from engagement + scope_record)
-    target_path: str
+    target_type: str              # repo | live_app  (routes the graph, Phase 2)
+    target_path: str              # repo path OR live-app base URL (target_ref)
     scope_allowlist: list[str]
     non_destructive_only: bool
 

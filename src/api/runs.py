@@ -82,9 +82,14 @@ def start_run(
         )
 
     # IN-CODE SCOPE ENFORCEMENT (surfaced synchronously, before any run row).
+    # Dispatch on target_type: repo -> path containment, live_app -> host
+    # allowlist. A live-app engagement whose target host is not authorized is
+    # refused here (422) before any run row is created or any probe is issued.
     scope = engagement.scope_record
     allowlist = list(scope.authorized_targets) if scope else []
-    if not scope_guard.check(engagement.target_ref, allowlist):
+    if not scope_guard.check_target(
+        engagement.target_ref, allowlist, engagement.target_type
+    ):
         raise api_error(
             "SCOPE_VIOLATION",
             f"target '{engagement.target_ref}' is not within the authorized scope allowlist",

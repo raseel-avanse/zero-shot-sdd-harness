@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ApiError, createEngagement } from '@/lib/api'
-import { ErrorBanner, StubBadge } from './ui'
+import { ApiError, createEngagement, type TargetType } from '@/lib/api'
+import { ErrorBanner } from './ui'
 
 export function ScopeForm({
   onCreated,
@@ -12,6 +12,7 @@ export function ScopeForm({
   onCancel: () => void
 }) {
   const [name, setName] = useState('')
+  const [targetType, setTargetType] = useState<TargetType>('repo')
   const [targetRef, setTargetRef] = useState('')
   const [allowlist, setAllowlist] = useState<string[]>([''])
   const [roe, setRoe] = useState('')
@@ -31,10 +32,15 @@ export function ScopeForm({
     setAllowlist((a) => (a.length === 1 ? a : a.filter((_, j) => j !== i)))
   }
 
+  const isLive = targetType === 'live_app'
+
   function validate(): boolean {
     const fe: Record<string, string> = {}
     if (!name.trim()) fe.name = 'Name is required.'
-    if (!targetRef.trim()) fe.targetRef = 'Target repo path is required.'
+    if (!targetRef.trim())
+      fe.targetRef = isLive ? 'Target base URL is required.' : 'Target repo path is required.'
+    else if (isLive && !/^https?:\/\//i.test(targetRef.trim()))
+      fe.targetRef = 'Target base URL must start with http:// or https://'
     if (!allowlist.some((a) => a.trim())) fe.allowlist = 'At least one authorized target is required.'
     if (!roe.trim()) fe.roe = 'Rules of engagement are required.'
     if (!authorizedBy.trim()) fe.authorizedBy = 'Authorizer is required for an audit trail.'
@@ -50,7 +56,7 @@ export function ScopeForm({
     try {
       const { engagement_id } = await createEngagement({
         name: name.trim(),
-        target_type: 'repo',
+        target_type: targetType,
         target_ref: targetRef.trim(),
         authorized_targets: allowlist.map((a) => a.trim()).filter(Boolean),
         rules_of_engagement: roe.trim(),
@@ -93,28 +99,61 @@ export function ScopeForm({
       <fieldset>
         <legend className={labelCls}>Target type</legend>
         <div className="mt-2 flex gap-3">
-          <label className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-slate-100">
-            <input type="radio" name="target_type" defaultChecked readOnly />
+          <label
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+              !isLive
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-slate-100'
+                : 'border-slate-700 text-slate-400'
+            }`}
+          >
+            <input
+              type="radio"
+              name="target_type"
+              checked={!isLive}
+              onChange={() => setTargetType('repo')}
+            />
             Local repository
           </label>
-          <label className="flex cursor-not-allowed items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-sm text-slate-500">
-            <input type="radio" name="target_type" disabled />
+          <label
+            data-testid="target-type-live"
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+              isLive
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-slate-100'
+                : 'border-slate-700 text-slate-400'
+            }`}
+          >
+            <input
+              type="radio"
+              name="target_type"
+              checked={isLive}
+              onChange={() => setTargetType('live_app')}
+            />
             Live app
-            <StubBadge phase="P2" />
           </label>
         </div>
       </fieldset>
 
+      {isLive && (
+        <div
+          data-testid="live-nondestructive-notice"
+          className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-xs text-sky-300"
+        >
+          Live-app probing is <strong>non-destructive only</strong>: Sentinel issues read-only verbs
+          (GET / HEAD / OPTIONS) against allowlisted hosts. State-changing requests and out-of-scope
+          hosts are refused in code, independent of the model.
+        </div>
+      )}
+
       <div>
         <label htmlFor="target-ref" className={labelCls}>
-          Target repository path
+          {isLive ? 'Target base URL' : 'Target repository path'}
         </label>
         <input
           id="target-ref"
           className={`${inputCls} font-mono`}
           value={targetRef}
           onChange={(e) => setTargetRef(e.target.value)}
-          placeholder="/abs/path/to/repo"
+          placeholder={isLive ? 'https://app.example.com' : '/abs/path/to/repo'}
         />
         {fieldErrors.targetRef && <FieldError msg={fieldErrors.targetRef} />}
       </div>
@@ -122,7 +161,9 @@ export function ScopeForm({
       <div>
         <span className={labelCls}>Authorized targets (allowlist)</span>
         <p className="mt-0.5 text-xs text-slate-500">
-          Only these paths may be read. The target path above must be inside one of them.
+          {isLive
+            ? 'Only these hosts may be probed. The base URL above must be an allowlisted host.'
+            : 'Only these paths may be read. The target path above must be inside one of them.'}
         </p>
         <div className="mt-2 space-y-2">
           {allowlist.map((val, i) => (
@@ -132,7 +173,7 @@ export function ScopeForm({
                 className={`${inputCls} mt-0 font-mono`}
                 value={val}
                 onChange={(e) => setAllow(i, e.target.value)}
-                placeholder="/abs/path/to/repo"
+                placeholder={isLive ? 'https://app.example.com' : '/abs/path/to/repo'}
               />
               <button
                 type="button"
@@ -193,12 +234,6 @@ export function ScopeForm({
           onChange={(e) => setNonDestructive(e.target.checked)}
         />
         Non-destructive only (read-only assessment)
-      </label>
-
-      <label className="flex cursor-not-allowed items-center gap-2 text-sm text-slate-500">
-        <input type="checkbox" disabled />
-        Enable live-app active probing
-        <StubBadge phase="P2" />
       </label>
 
       {error && <ErrorBanner message={error} />}

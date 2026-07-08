@@ -18,7 +18,7 @@ test('app loads, is styled, and shows the Sentinel console', async ({ page }) =>
   await expect(page.getByTestId('new-engagement')).toBeVisible()
 })
 
-test('scope form renders, validates, and shows labelled Phase-2 stubs', async ({ page }) => {
+test('scope form renders and validates', async ({ page }) => {
   await page.goto('./')
   await page.getByTestId('new-engagement').click()
 
@@ -26,12 +26,29 @@ test('scope form renders, validates, and shows labelled Phase-2 stubs', async ({
   await expect(page.getByLabel('Engagement name')).toBeVisible()
   await expect(page.getByLabel('Target repository path')).toBeVisible()
 
-  // Live-app target type is a clearly-labelled, disabled stub.
-  await expect(page.getByText(/Coming in Phase 2/i).first()).toBeVisible()
-
   // Submitting empty surfaces inline validation, not a crash.
   await page.getByRole('button', { name: 'Create engagement' }).click()
   await expect(page.getByText('Name is required.')).toBeVisible()
+})
+
+test('live-app target type is selectable and shows the non-destructive notice (Phase 2 real)', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await page.getByTestId('new-engagement').click()
+
+  // Selecting live-app switches the target field to a base-URL input and shows
+  // the read-only / non-destructive scope notice.
+  await page.getByTestId('target-type-live').click()
+  await expect(page.getByLabel('Target base URL')).toBeVisible()
+  await expect(page.getByTestId('live-nondestructive-notice')).toContainText(/non-destructive/i)
+  await expect(page.getByTestId('live-nondestructive-notice')).toContainText(/GET \/ HEAD \/ OPTIONS/i)
+
+  // A non-URL base URL is rejected inline (in-code host guard on the backend too).
+  await page.getByLabel('Engagement name').fill('Live probe')
+  await page.getByLabel('Target base URL').fill('not-a-url')
+  await page.getByRole('button', { name: 'Create engagement' }).click()
+  await expect(page.getByText(/must start with http/i)).toBeVisible()
 })
 
 test('allowlist rows can be added and removed', async ({ page }) => {

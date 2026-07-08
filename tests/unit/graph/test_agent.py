@@ -6,7 +6,12 @@ LLM would raise if invoked — the scope-refusal test asserts it never is.
 """
 import graph.nodes as nodes
 from graph.agent import _build_graph, agentic_ai
-from graph.edges import route_after_hunt, route_after_scope
+from graph.edges import (
+    route_after_hunt,
+    route_after_live_hunt,
+    route_after_prioritize,
+    route_after_scope,
+)
 from graph.nodes import enforce_scope
 
 
@@ -78,3 +83,73 @@ def test_hunt_loop_bounded_by_step_budget():
     # No categories left -> validate regardless of budget.
     done = {"priorities": [], "step_count": 3, "step_budget": 40}
     assert route_after_hunt(done) == "validate"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 2 — live-app branch (SAFETY-CRITICAL): branch on target_type, refuse
+# out-of-scope hosts in code without any LLM call, and bound the live loop.
+# --------------------------------------------------------------------------- #
+
+
+def test_scope_gate_branches_live_app_to_live_recon(monkeypatch):
+    # An in-scope live target routes to the non-destructive live path, NOT recon.
+    def _boom(*a, **k):
+        raise AssertionError("enforce_scope must NOT contact the LLM")
+
+    monkeypatch.setattr(nodes, "LLMClient", _boom)
+
+    state = {
+        "run_id": "r1",
+        "target_type": "live_app",
+        "target_path": "https://app.example.com/",
+        "scope_allowlist": ["app.example.com"],
+        "step_budget": 40,
+    }
+    out = enforce_scope(state)
+    assert not out.get("error")
+    # The router must send a live_app target down the live path.
+    assert route_after_scope({**out, "target_type": "live_app"}) == "live_recon"
+
+
+def test_scope_gate_refuses_out_of_scope_live_host_without_llm(monkeypatch):
+    # An out-of-scope host is refused in code — no LLM, no probe, straight to sink.
+    def _boom(*a, **k):
+        raise AssertionError("enforce_scope must NOT contact the LLM")
+
+    monkeypatch.setattr(nodes, "LLMClient", _boom)
+
+    def _no_probe(*a, **k):
+        raise AssertionError("no probe may be constructed for an out-of-scope host")
+
+    monkeypatch.setattr(nodes.http_probe, "Prober", _no_probe)
+
+    state = {
+        "run_id": "r1",
+        "target_type": "live_app",
+        "target_path": "https://evil.example.net/steal",
+        "scope_allowlist": ["app.example.com"],
+        "step_budget": 40,
+    }
+    out = enforce_scope(state)
+    assert out.get("error")
+    assert "scope violation" in out["error"]
+    assert route_after_scope({**out, "target_type": "live_app"}) == "handle_error"
+
+
+def test_prioritize_branches_hunt_vs_live_hunt():
+    assert route_after_prioritize({"target_type": "live_app"}) == "live_hunt"
+    assert route_after_prioritize({"target_type": "repo"}) == "hunt"
+    # Default (no target_type) is the repo path — backward compatible.
+    assert route_after_prioritize({}) == "hunt"
+
+
+def test_live_hunt_loop_bounded_by_step_budget():
+    # Categories remain but budget exhausted -> stop looping, go to validate.
+    exhausted = {"priorities": ["injection"], "step_count": 40, "step_budget": 40}
+    assert route_after_live_hunt(exhausted) == "validate"
+    # Budget + categories remain -> keep probing.
+    more = {"priorities": ["injection"], "step_count": 2, "step_budget": 40}
+    assert route_after_live_hunt(more) == "live_hunt"
+    # No categories left -> validate regardless of budget.
+    done = {"priorities": [], "step_count": 2, "step_budget": 40}
+    assert route_after_live_hunt(done) == "validate"

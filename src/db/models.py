@@ -63,6 +63,9 @@ class Engagement(Base):
     findings: Mapped[list["Finding"]] = relationship(
         back_populates="engagement", cascade="all, delete-orphan"
     )
+    chat_turns: Mapped[list["ChatTurn"]] = relationship(
+        back_populates="engagement", cascade="all, delete-orphan"
+    )
 
 
 class ScopeRecord(Base):
@@ -163,3 +166,22 @@ class Finding(Base):
 
     engagement: Mapped["Engagement"] = relationship(back_populates="findings")
     run: Mapped["AssessmentRun"] = relationship(back_populates="findings")
+
+
+class ChatTurn(Base):
+    """Conversation memory for interactive chat over an engagement (Phase 2)."""
+
+    __tablename__ = "chat_turns"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    engagement_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("engagements.id"), nullable=False
+    )
+    # role enum: user | assistant
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, default=_now
+    )
+
+    engagement: Mapped["Engagement"] = relationship(back_populates="chat_turns")

@@ -33,6 +33,7 @@ def _build_initial_state(run: AssessmentRun, engagement: Engagement) -> AgentSta
     return {
         "run_id": run.id,
         "engagement_id": engagement.id,
+        "target_type": engagement.target_type or "repo",
         "target_path": engagement.target_ref,
         "scope_allowlist": allowlist,
         "non_destructive_only": non_destructive,

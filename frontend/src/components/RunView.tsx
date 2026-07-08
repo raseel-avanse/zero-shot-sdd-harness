@@ -10,6 +10,7 @@ import {
   type Finding,
   type ProgressEvent,
 } from '@/lib/api'
+import { ChatPanel } from './ChatPanel'
 import { FindingCard } from './FindingCard'
 import { ErrorBanner, StubBadge } from './ui'
 
@@ -127,7 +128,18 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
     }
   }
 
+  function handleRetested(id: string, status: string, confidence: string, evidence?: string) {
+    setFindings((prev) =>
+      prev.map((f) =>
+        f.id === id
+          ? { ...f, status, confidence, ...(evidence !== undefined ? { evidence } : {}) }
+          : f,
+      ),
+    )
+  }
+
   const running = streamState === 'starting' || streamState === 'streaming' || streamState === 'reconnecting'
+  const isLive = detail?.engagement.target_type === 'live_app'
 
   return (
     <div className="space-y-6">
@@ -146,6 +158,14 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
             <p className="mt-1 text-xs text-slate-500">
               Authorized by {detail.scope_record.authorized_by} ·{' '}
               {detail.scope_record.non_destructive_only ? 'non-destructive only' : 'destructive allowed'}
+            </p>
+          )}
+          {isLive && (
+            <p
+              data-testid="live-probe-notice"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30"
+            >
+              Live-app probe · read-only (GET / HEAD / OPTIONS), allowlisted hosts only
             </p>
           )}
         </div>
@@ -205,26 +225,15 @@ export function RunView({ engagementId, onBack }: { engagementId: string; onBack
         ) : (
           <div className="space-y-4">
             {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} />
+              <FindingCard key={f.id} finding={f} onRetested={handleRetested} />
             ))}
           </div>
         )}
       </section>
 
-      {/* Later-phase stubs, clearly labelled */}
+      {/* Phase-2 chat is now real; next-probe suggestions remain a P3 stub. */}
       <section className="grid gap-4 sm:grid-cols-2">
-        <StubPanel title="Interactive chat" phase="P2">
-          <div className="flex gap-2">
-            <input
-              disabled
-              placeholder="Ask a follow-up about this engagement…"
-              className="w-full cursor-not-allowed rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-slate-500"
-            />
-            <button disabled className="cursor-not-allowed rounded-lg border border-slate-800 px-3 text-sm text-slate-600">
-              Send
-            </button>
-          </div>
-        </StubPanel>
+        <ChatPanel engagementId={engagementId} />
         <StubPanel title="Next-probe suggestions" phase="P3">
           <p className="text-sm text-slate-500">
             Sentinel will suggest the highest-value next probes and flag the same pattern elsewhere.

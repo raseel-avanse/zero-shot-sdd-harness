@@ -42,4 +42,16 @@ test('create engagement, start assessment, and stream a real finding card', asyn
 
   // Token/cost panel reflects real work (non-zero cost by the time we finish).
   await expect(page.getByTestId('est-cost')).toBeVisible()
+
+  // Phase-2 surfaces are wired on the run view:
+  // (1) the interactive chat panel renders with a usable input + send button.
+  await expect(page.getByTestId('chat-panel')).toBeVisible()
+  await expect(page.getByTestId('chat-input')).toBeEnabled()
+  // Send is disabled until there is a message, enabled once typed.
+  await expect(page.getByTestId('chat-send')).toBeDisabled()
+  await page.getByTestId('chat-input').fill('Which finding is the highest risk?')
+  await expect(page.getByTestId('chat-send')).toBeEnabled()
+
+  // (2) each finding card carries a real (enabled) Re-test button.
+  await expect(firstCard.getByTestId('retest-button')).toBeEnabled()
 })

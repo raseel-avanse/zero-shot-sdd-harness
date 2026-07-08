@@ -1,11 +1,41 @@
 'use client'
 
-import type { Finding } from '@/lib/api'
+import { useState } from 'react'
+import { ApiError, retestFinding, type Finding } from '@/lib/api'
 import { ConfidenceBadge, Markdown, SeverityBadge, StubBadge } from './ui'
 
 const STATUS_LABELS = ['new', 'validated', 'remediated', 'false_positive']
 
-export function FindingCard({ finding }: { finding: Finding }) {
+export function FindingCard({
+  finding,
+  onRetested,
+}: {
+  finding: Finding
+  onRetested?: (id: string, status: string, confidence: string, evidence?: string) => void
+}) {
+  const [retesting, setRetesting] = useState(false)
+  const [retestError, setRetestError] = useState<string | null>(null)
+  const [retestNote, setRetestNote] = useState<string | null>(null)
+
+  async function handleRetest() {
+    setRetestError(null)
+    setRetestNote(null)
+    setRetesting(true)
+    try {
+      const res = await retestFinding(finding.id)
+      onRetested?.(res.finding_id, res.status, res.confidence, res.evidence)
+      setRetestNote(
+        res.status === 'remediated'
+          ? 'Re-test passed — the PoC no longer reproduces. Marked remediated.'
+          : `Re-test complete — status: ${res.status.replace('_', ' ')}, confidence: ${res.confidence}.`,
+      )
+    } catch (err) {
+      setRetestError(err instanceof ApiError ? err.message : 'Re-test failed.')
+    } finally {
+      setRetesting(false)
+    }
+  }
+
   return (
     <article
       data-testid="finding-card"
@@ -56,11 +86,12 @@ export function FindingCard({ finding }: { finding: Finding }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
-        {/* Read-only status controls — P3 stub */}
+        {/* Read-only status controls — full lifecycle editing is P3 */}
         <div className="flex items-center gap-1.5">
           {STATUS_LABELS.map((s) => (
             <span
               key={s}
+              data-testid={s === finding.status ? 'finding-status-active' : undefined}
               className={`rounded px-2 py-0.5 text-[11px] ${
                 s === finding.status
                   ? 'bg-slate-700 text-slate-100'
@@ -74,14 +105,26 @@ export function FindingCard({ finding }: { finding: Finding }) {
         </div>
         <button
           type="button"
-          disabled
-          className="cursor-not-allowed rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-500"
-          title="Re-test after fix — coming in Phase 2"
+          onClick={handleRetest}
+          disabled={retesting}
+          data-testid="retest-button"
+          className="rounded-md border border-emerald-600/50 px-3 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-600/10 disabled:opacity-50"
+          title="Re-run validation against the current target state to confirm a fix"
         >
-          Re-test after fix
+          {retesting ? 'Re-testing…' : 'Re-test after fix'}
         </button>
-        <StubBadge phase="P2" />
       </div>
+
+      {retestNote && (
+        <p className="mt-2 text-xs text-emerald-400" data-testid="retest-note">
+          {retestNote}
+        </p>
+      )}
+      {retestError && (
+        <p className="mt-2 text-xs text-red-400" role="alert">
+          {retestError}
+        </p>
+      )}
     </article>
   )
 }
