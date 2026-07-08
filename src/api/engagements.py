@@ -41,13 +41,7 @@ def _scope_out(scope: ScopeRecord) -> ScopeRecordOut:
 def create_engagement(
     req: CreateEngagementRequest, session: Session = Depends(get_session)
 ) -> dict:
-    if req.target_type == "live_app":
-        raise api_error(
-            "UNSUPPORTED_TARGET",
-            "target_type 'live_app' is not yet available (Phase 1 supports 'repo' only)",
-            400,
-        )
-    if req.target_type != "repo":
+    if req.target_type not in ("repo", "live_app"):
         raise api_error("INVALID_TARGET", f"unknown target_type: {req.target_type}", 400)
 
     try:

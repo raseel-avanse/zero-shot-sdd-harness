@@ -55,9 +55,18 @@ def test_create_engagement_missing_fields(api_client):
     assert r.status_code == 422
 
 
-def test_live_app_target_rejected(api_client, tmp_path):
-    payload = _valid_payload(str(tmp_path), [str(tmp_path)])
+def test_live_app_target_accepted(api_client):
+    # Phase 2: live_app engagements are now supported (non-destructive probing).
+    payload = _valid_payload("http://localhost:9999", ["localhost:9999"])
     payload["target_type"] = "live_app"
+    r = api_client.post("/engagements", json=payload)
+    assert r.status_code == 200
+    assert r.json()["data"]["engagement_id"]
+
+
+def test_unknown_target_type_rejected(api_client, tmp_path):
+    payload = _valid_payload(str(tmp_path), [str(tmp_path)])
+    payload["target_type"] = "bogus"
     r = api_client.post("/engagements", json=payload)
     assert r.status_code == 400
 
