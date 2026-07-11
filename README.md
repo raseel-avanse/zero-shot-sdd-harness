@@ -6,6 +6,46 @@ A lean, Claude-Code-native harness for building agentic software **spec-first**.
 
 ---
 
+## Running DealScout (this build)
+
+> **All commands run from the repo root** (where `pyproject.toml` and `alembic.ini` live). Every Python command is prefixed with `uv run`.
+
+DealScout is a stateless, single-user browser assistant: type a product name and it runs a deep Gemini `google_search`-grounded research pass across Indian shopping sites (Amazon.in, Flipkart, Myntra/Ajio, quick-commerce, electronics) and returns a ranked list of 3–5 deals — each with site, INR price, and a one-line reason — with named-step progress during the run and tokens/cost after.
+
+### Prerequisites
+
+- `.env` at the repo root with:
+  - `AGENT_GEMINI_API_KEY=<your Gemini API key>`
+  - `AGENT_DATABASE_URL=sqlite:///./data/agent.db`
+  - optional: `AGENT_LLM_MODEL=gemini-2.5-flash` (default), `AGENT_COST_INR_PER_1K_TOKENS=1.5`
+- `uv` (Python) and `pnpm` (frontend) installed.
+
+> **Gemini quota note:** the default model is `gemini-2.5-flash`. A Gemini **free-tier** key allows ~20 grounded requests/day; each DealScout query uses 2 calls. If you hit the daily cap the UI shows a friendly "The research service is busy right now — please try again in a minute." message. Use a paid/higher-quota key for sustained use.
+
+### Run (Phase 1)
+
+```bash
+# 1. Build the static frontend (served by the backend at /app/)
+cd frontend && pnpm install && pnpm build && cd ..
+
+# 2. Apply DB migrations (SQLite) and verify
+uv run alembic upgrade head
+uv run alembic current          # must print a revision hash (0001), not blank
+
+# 3. Start the app (API + built UI on :8001)
+uv run python -m src
+```
+
+Then open **http://localhost:8001/app/**, type a product name (e.g. "Sony WH-1000XM5 headphones"), and click **Find deals**.
+
+### Test
+
+```bash
+uv run pytest tests/unit -q                                  # fast, no network
+uv run pytest tests/integration/test_deal_research.py -q     # real Gemini (needs quota)
+cd frontend && pnpm exec playwright test                      # live E2E (backend must be running)
+```
+
 ## The Spirit
 
 Six convictions the whole repo is built around:

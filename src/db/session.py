@@ -12,7 +12,13 @@ def _get_engine() -> Engine:
     global _engine
     if _engine is None:
         from config.settings import get_settings
-        _engine = create_engine(get_settings().database_url, echo=False)
+        url = get_settings().database_url
+        kwargs: dict = {"echo": False}
+        # Background research runs execute in worker threads; allow cross-thread
+        # SQLite connection use (each thread still opens its own connection).
+        if url.startswith("sqlite"):
+            kwargs["connect_args"] = {"check_same_thread": False}
+        _engine = create_engine(url, **kwargs)
     return _engine
 
 

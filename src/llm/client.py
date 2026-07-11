@@ -1,9 +1,10 @@
 from config.settings import get_settings
+from llm.result import LLMResult
 
 
-def _make_provider():
+def _make_provider(force: str | None = None):
     s = get_settings()
-    provider = s.llm_provider
+    provider = force or s.llm_provider
 
     # auto-detect from whichever key is set
     if not provider:
@@ -28,8 +29,18 @@ def _make_provider():
 
 
 class LLMClient:
-    def __init__(self) -> None:
-        self._provider = _make_provider()
+    def __init__(self, provider: str | None = None) -> None:
+        self._provider = _make_provider(provider)
+
+    @property
+    def model(self) -> str:
+        return getattr(self._provider, "model", "")
 
     def call_model(self, prompt: str, *, system: str | None = None) -> str:
         return self._provider.call_model(prompt, system=system)
+
+    def generate(
+        self, prompt: str, *, system: str | None = None, grounding: bool = False
+    ) -> LLMResult:
+        """Grounded/structured call — provider must implement `generate` (Gemini)."""
+        return self._provider.generate(prompt, system=system, grounding=grounding)
