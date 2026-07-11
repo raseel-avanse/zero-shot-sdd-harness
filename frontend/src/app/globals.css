@@ -1,2 +1,115 @@
 @import "tailwindcss";
 @source "../";
+
+/* DealScout design system — cohesive, modern, dark-mode-aware.
+   Tailwind v4's `dark:` variant follows `prefers-color-scheme` by default, so
+   these tokens are consumed via arbitrary values (e.g. bg-[var(--surface)]) and
+   the base layer below flips them for dark mode. All pairings meet WCAG AA. */
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+
+  /* Light theme */
+  --bg: #f7f8fb;
+  --bg-glow: 236 240 253; /* indigo-tinted hero glow (rgb) */
+  --surface: #ffffff;
+  --surface-2: #f2f4f9;
+  --border: #e5e8f0;
+  --border-strong: #d3d8e3;
+  --text: #10131a;
+  --text-muted: #5a6272;
+  --text-faint: #868ea0;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef0fe;
+  --ring: #6366f1;
+
+  --pos-bg: #e7f6ec;
+  --pos-fg: #0f7a3d;
+  --pos-border: #b7e3c6;
+  --warn-bg: #fdf2dd;
+  --warn-fg: #96620a;
+  --warn-border: #f2dfae;
+  --neutral-bg: #eef0f4;
+  --neutral-fg: #55607a;
+  --neutral-border: #dfe3ec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0c12;
+    --bg-glow: 40 44 78;
+    --surface: #14171f;
+    --surface-2: #1b1f2a;
+    --border: #262b38;
+    --border-strong: #333a4b;
+    --text: #f2f4f8;
+    --text-muted: #a3abbd;
+    --text-faint: #7b8397;
+    --accent: #7c7bf7;
+    --accent-hover: #918ffa;
+    --accent-fg: #0a0c12;
+    --accent-soft: #1e2138;
+    --ring: #8b8bfb;
+
+    --pos-bg: #10281b;
+    --pos-fg: #5fd894;
+    --pos-border: #1f4d34;
+    --warn-bg: #2b2210;
+    --warn-fg: #f2c261;
+    --warn-border: #4d3e19;
+    --neutral-bg: #1c2029;
+    --neutral-fg: #a3abbd;
+    --neutral-border: #2b303c;
+  }
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  background-image: radial-gradient(
+    60rem 40rem at 50% -12rem,
+    rgb(var(--bg-glow) / 0.9),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes ds-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ds-animate-in {
+  animation: ds-fade-in 0.35s ease-out both;
+}
+
+@keyframes ds-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

@@ -2,14 +2,24 @@
 // at :8001/app/ and calls the API at relative paths (no CORS).
 
 export type RunStatus = 'running' | 'completed' | 'failed' | 'needs_input'
-export type ProgressStep = 'queued' | 'searching' | 'reviewing' | 'ranking' | 'done'
+export type ProgressStep =
+  | 'queued'
+  | 'searching'
+  | 'reviewing'
+  | 'ranking'
+  | 'assessing'
+  | 'done'
+
+export type QueryType = 'name' | 'url' | 'category'
+
+export type QualityLabel = 'genuine_discount' | 'wait' | 'unknown'
 
 export interface Deal {
   rank: number
   site: string
   price_inr: number
   reason: string
-  quality_label: string | null
+  quality_label: QualityLabel | string | null
   quality_reason: string | null
   source_url: string | null
 }
@@ -36,11 +46,14 @@ interface Envelope<T> {
 // call the API with a leading slash to reach :8001/runs directly.
 const API_BASE = ''
 
-export async function startRun(queryText: string): Promise<{ run_id: string; status: RunStatus }> {
+export async function startRun(
+  queryType: QueryType,
+  queryText: string,
+): Promise<{ run_id: string; status: RunStatus }> {
   const res = await fetch(`${API_BASE}/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query_type: 'name', query_text: queryText }),
+    body: JSON.stringify({ query_type: queryType, query_text: queryText }),
   })
   const body = (await res.json()) as Envelope<{ run_id: string; status: RunStatus }>
   if (!res.ok || body.error || !body.data) {
@@ -54,6 +67,22 @@ export async function pollRun(runId: string): Promise<RunResult> {
   const body = (await res.json()) as Envelope<RunResult>
   if (!res.ok || body.error || !body.data) {
     throw new Error(body.error ?? `Couldn't reach the research service (${res.status}).`)
+  }
+  return body.data
+}
+
+export async function submitAnswer(
+  runId: string,
+  answer: string,
+): Promise<{ run_id: string; status: RunStatus }> {
+  const res = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}/answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer }),
+  })
+  const body = (await res.json()) as Envelope<{ run_id: string; status: RunStatus }>
+  if (!res.ok || body.error || !body.data) {
+    throw new Error(body.error ?? `Couldn't submit your answer (${res.status}).`)
   }
   return body.data
 }

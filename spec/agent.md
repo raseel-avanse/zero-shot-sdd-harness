@@ -12,10 +12,10 @@
 
 | Agent / Node | Provider | Model ID | Rationale |
 |-------------|----------|----------|-----------|
-| `research` | Gemini | `gemini-2.5-flash` (env `AGENT_LLM_MODEL`) | Deep grounded search across sites; grounding tool required. |
-| `rank` | Gemini | `gemini-2.5-flash` | Turns research notes into a defensible structured ranking; quality-sensitive. |
-| `clarify` (P2) | Gemini | `gemini-2.5-flash` | Judges ambiguity + composes ONE question; low volume. |
-| `deal_quality` (P2) | Gemini | `gemini-2.5-flash` | Judges discount genuineness per deal, grounded in price-history search. |
+| `research` | Gemini | `gemini-flash-latest` (env `AGENT_LLM_MODEL`) | Deep grounded search across sites; grounding tool required. |
+| `rank` | Gemini | `gemini-flash-latest` | Turns research notes into a defensible structured ranking; quality-sensitive. |
+| `clarify` (P2) | Gemini | `gemini-flash-latest` | Judges ambiguity + composes ONE question; low volume. |
+| `deal_quality` (P2) | Gemini | `gemini-flash-latest` | Judges discount genuineness per deal, grounded in price-history search. |
 
 **Fallback behaviour:** On a transient Gemini error (timeout/5xx/rate-limit) each node retries with exponential backoff (up to 2 retries). On persistent failure the node sets `state.error` and routes to `handle_error`; the run is marked `failed` and the UI surfaces a plain-language message. No offline stub on the tested path — tests call the real API with keys from `.env`.
 

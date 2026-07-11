@@ -57,8 +57,8 @@ SQLite (runs, deals)  ◄────────────  LangGraph graph (
 
 - **Language:** Python 3.12+ (backend), TypeScript (frontend).
 - **Agent framework:** LangGraph (already wired in the skeleton; extended in place).
-- **LLM provider + model:** Google Gemini via `google-genai`, using the native `google_search` grounding tool. Model: **`gemini-2.5-flash`** for both the research and rank nodes. Env-configurable via `AGENT_LLM_MODEL`.
-  > **Chosen:** `gemini-2.5-flash` (verified live: supports the `google_search` grounding tool, returns `usage_metadata` for prompt/completion tokens plus grounding metadata, and has free-tier quota). `gemini-2.5-pro` (free-tier limit 0) and `gemini-3.1-pro` (404 — not present on this key) are not available on this API key. Env-overridable via `AGENT_LLM_MODEL`, so switching to another grounding-capable Gemini model is a one-line `.env` change.
+- **LLM provider + model:** Google Gemini via `google-genai`, using the native `google_search` grounding tool. Model: **`gemini-flash-latest`** for the research, rank, clarify, and deal-quality nodes. Env-configurable via `AGENT_LLM_MODEL`.
+  > **Chosen:** `gemini-flash-latest` — a grounding-capable Gemini flash alias verified live to support the `google_search` tool and return `usage_metadata` + grounding metadata. Note: the previously-pinned `gemini-2.5-flash` was withdrawn (`404 — no longer available to new users`), and `gemini-2.5-pro`/`gemini-3.1-pro` are not on this key; the `-latest` alias is used so model rotation does not break the build. Env-overridable via `AGENT_LLM_MODEL`, so switching to another grounding-capable Gemini model is a one-line `.env` change.
 - **Backend:** FastAPI (flat `src/` package; app is `api:app`; run via `uv run python -m src` on port 8001).
 - **Database + ORM:** SQLite via `AGENT_DATABASE_URL` + SQLAlchemy 2.0 (declarative `Mapped`), Alembic migrations.
 - **Frontend:** Next.js 15 + React 19, statically exported and served by FastAPI at `:8001/app/` (single origin — UI and API share `:8001`).

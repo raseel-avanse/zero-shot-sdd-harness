@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 // The E2E runs against the LIVE app: the backend serves the statically-exported
 // UI at http://localhost:8001/app/ (single origin, real Gemini via .env).
 // Start the backend separately: `uv run python -m src` after `pnpm build`.
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:8001/app/'
+// baseURL is the origin; specs navigate to the app path `/app/` (basePath).
+const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:8001'
 
 export default defineConfig({
   testDir: './tests/e2e',

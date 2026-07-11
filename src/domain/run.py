@@ -8,6 +8,10 @@ class RunRequest(BaseModel):
     query_text: str
 
 
+class AnswerRequest(BaseModel):
+    answer: str
+
+
 class RunResponse(BaseModel):
     run_id: str
     status: str

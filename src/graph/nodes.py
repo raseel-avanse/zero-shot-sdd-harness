@@ -9,15 +9,89 @@ from graph.state import AgentState
 from llm.client import LLMClient
 from observability.events import get_logger
 from tools.pricing import estimate_cost
+from tools.deal_quality import parse_quality_response, merge_quality
 
 _PROMPTS = Path(__file__).parent.parent / "prompts"
 _NOTES_CHAR_LIMIT = 8000
 
 log = get_logger("graph.nodes")
 
+# Per query-type instruction blocks appended to the shared research prompt so
+# the research node behaves correctly for name / url / category modes.
+_MODE_INSTRUCTIONS = {
+    "name": (
+        "MODE: PRODUCT NAME. The input is a product name. Research this specific "
+        "product and cross-check its price across Indian sites."
+    ),
+    "url": (
+        "MODE: PRODUCT URL. The input is a product-page URL from an Indian "
+        "marketplace. First identify the exact product the URL points to (brand, "
+        "model, variant), then find and cross-check listings for that SAME product "
+        "(or the closest comparable item) across the other Indian sites. Anchor the "
+        "ranking to that identified product — do not drift to unrelated items."
+    ),
+    "category": (
+        "MODE: CATEGORY. The input is a product category, optionally with a budget "
+        "or constraint (e.g. 'gaming laptops under 80k'). Interpret the category and "
+        "any stated constraint, DISCOVER a handful of strong candidate products in "
+        "that category yourself, then find the best current listing for each. Honour "
+        "any stated budget. The best-value picks may be DIFFERENT products, not five "
+        "listings of one item."
+    ),
+}
+
 
 def _load_prompt(name: str) -> str:
     return (_PROMPTS / name).read_text(encoding="utf-8").strip()
+
+
+def _build_research_prompt(query_type: str, query_text: str, clarify_answer: str | None) -> str:
+    mode = _MODE_INSTRUCTIONS.get(query_type, _MODE_INSTRUCTIONS["name"])
+    parts = [mode, "", f"Query ({query_type}): {query_text}"]
+    if clarify_answer:
+        parts.append(f"\nThe shopper clarified: {clarify_answer}")
+    parts.append("\nResearch this and return trimmed notes.")
+    return "\n".join(parts)
+
+
+def _parse_clarify_json(raw: str) -> tuple[bool, str]:
+    """Parse the clarify judge's JSON into (needs_clarification, question)."""
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[4:]
+    text = text.strip()
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object for the clarify decision")
+    needs = bool(data.get("needs_clarification", False))
+    question = str(data.get("question", "") or "").strip()
+    if needs and not question:
+        needs = False  # no usable question -> do not gate
+    return needs, question
+
+
+def check_clarification(query_type: str, query_text: str) -> tuple[bool, str]:
+    """Ask Gemini (one cheap, non-grounded call) whether the query is too
+    ambiguous to rank, and if so compose ONE question.
+
+    URL queries anchor a specific product and are never gated (saves a call).
+    On any provider/parse failure, degrade to NOT gating (proceed to research).
+    """
+    if query_type == "url":
+        return False, ""
+    try:
+        client = LLMClient(provider="gemini")
+        result = client.generate(
+            f"Query ({query_type}): {query_text}",
+            system=_load_prompt("clarify.md"),
+            grounding=False,
+        )
+        return _parse_clarify_json(result.text)
+    except Exception as exc:  # noqa: BLE001 — degrade to not-gating on any failure
+        log.info("node.clarify.check_failed", error=str(exc))
+        return False, ""
 
 
 def friendly_error(exc: Exception, *, stage: str = "research") -> str:
@@ -59,12 +133,40 @@ def research(state: AgentState) -> AgentState:
     run_id = state["run_id"]
     query_text = state.get("query_text", "")
     query_type = state.get("query_type", "name")
+    clarify_answer = state.get("clarify_answer")
     try:
+        # Clarify gate (P2): only on the first pass (no answer yet). If the query
+        # is too vague to rank, pause the run BEFORE researching — set the
+        # question, persist status=needs_input, and return early. Clear queries
+        # (and resumes, which carry a clarify_answer) skip the gate entirely.
+        if not clarify_answer:
+            needs, question = check_clarification(query_type, query_text)
+            log.info(
+                "node.clarify.decision",
+                run_id=run_id,
+                query_type=query_type,
+                needs_clarification=needs,
+                question=question or None,
+            )
+            if needs:
+                _update_run(
+                    run_id,
+                    status="needs_input",
+                    progress_step="queued",
+                    clarifying_question=question,
+                )
+                return {
+                    **state,
+                    "needs_clarification": True,
+                    "clarifying_question": question,
+                }
+
         _update_run(run_id, progress_step="searching")
-        log.info("node.research.start", run_id=run_id, query_type=query_type)
+        log.info("node.research.start", run_id=run_id, query_type=query_type,
+                 resumed=bool(clarify_answer))
 
         client = LLMClient(provider="gemini")
-        prompt = f"Product ({query_type}): {query_text}\n\nResearch this and return trimmed notes."
+        prompt = _build_research_prompt(query_type, query_text, clarify_answer)
         result = client.generate(prompt, system=_load_prompt("research.md"), grounding=True)
 
         notes = (result.text or "").strip()[:_NOTES_CHAR_LIMIT]
@@ -181,6 +283,72 @@ def rank(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
+# deal_quality (P2)
+# ---------------------------------------------------------------------------
+def deal_quality(state: AgentState) -> AgentState:
+    """Judge, in ONE batched grounded Gemini call, whether each ranked deal is a
+    genuine discount / a good time to buy. Degrades every deal to `unknown`
+    rather than failing the run when grounding or parsing is thin.
+    """
+    run_id = state["run_id"]
+    deals = state.get("deals", []) or []
+    prompt_tokens = state.get("prompt_tokens", 0)
+    completion_tokens = state.get("completion_tokens", 0)
+
+    _update_run(run_id, progress_step="assessing")
+    log.info("node.deal_quality.start", run_id=run_id, deals=len(deals))
+
+    if not deals:
+        return {**state, "progress_step": "assessing"}
+
+    try:
+        client = LLMClient(provider="gemini")
+        listing = "\n".join(
+            f"- rank {d.get('rank')}: {d.get('site')} — ₹{d.get('price_inr')} "
+            f"({d.get('reason', '')})"
+            for d in deals
+        )
+        prompt = (
+            f"Product context: {state.get('query_text', '')}\n\n"
+            f"Ranked deals to assess:\n{listing}"
+        )
+        result = client.generate(
+            prompt, system=_load_prompt("deal_quality.md"), grounding=True
+        )
+        prompt_tokens += result.prompt_tokens
+        completion_tokens += result.completion_tokens
+        log.info(
+            "llm.call",
+            node="deal_quality",
+            run_id=run_id,
+            model=client.model,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            grounding_sources=len(result.sources),
+        )
+        assessments = parse_quality_response(result.text)
+    except Exception as exc:  # noqa: BLE001 — degrade, never fatal
+        log.info("node.deal_quality.degraded", run_id=run_id, error=str(exc))
+        assessments = {}
+
+    labelled = merge_quality(deals, assessments)
+    labelled_count = sum(1 for d in labelled if d.get("quality_label") != "unknown")
+    log.info(
+        "node.deal_quality.done",
+        run_id=run_id,
+        labelled=labelled_count,
+        total=len(labelled),
+    )
+    return {
+        **state,
+        "deals": labelled,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "progress_step": "assessing",
+    }
+
+
+# ---------------------------------------------------------------------------
 # finalize
 # ---------------------------------------------------------------------------
 def finalize(state: AgentState) -> AgentState:
@@ -188,7 +356,7 @@ def finalize(state: AgentState) -> AgentState:
     prompt_tokens = state.get("prompt_tokens", 0)
     completion_tokens = state.get("completion_tokens", 0)
     deals = state.get("deals", []) or []
-    model = get_settings().llm_model or "gemini-2.5-flash"
+    model = get_settings().llm_model or "gemini-flash-latest"
     cost = estimate_cost(prompt_tokens, completion_tokens, model)
 
     with create_db_session() as session:

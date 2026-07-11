@@ -17,10 +17,10 @@ DealScout is a stateless, single-user browser assistant: type a product name and
 - `.env` at the repo root with:
   - `AGENT_GEMINI_API_KEY=<your Gemini API key>`
   - `AGENT_DATABASE_URL=sqlite:///./data/agent.db`
-  - optional: `AGENT_LLM_MODEL=gemini-2.5-flash` (default), `AGENT_COST_INR_PER_1K_TOKENS=1.5`
+  - optional: `AGENT_LLM_MODEL=gemini-flash-latest` (default), `AGENT_COST_INR_PER_1K_TOKENS=1.5`
 - `uv` (Python) and `pnpm` (frontend) installed.
 
-> **Gemini quota note:** the default model is `gemini-2.5-flash`. A Gemini **free-tier** key allows ~20 grounded requests/day; each DealScout query uses 2 calls. If you hit the daily cap the UI shows a friendly "The research service is busy right now — please try again in a minute." message. Use a paid/higher-quota key for sustained use.
+> **Gemini quota note:** the default model is `gemini-flash-latest`. A Gemini **free-tier** key allows ~20 grounded requests/day; each DealScout query uses 2 calls. If you hit the daily cap the UI shows a friendly "The research service is busy right now — please try again in a minute." message. Use a paid/higher-quota key for sustained use.
 
 ### Run (Phase 1)
 

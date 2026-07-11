@@ -12,17 +12,25 @@ export default function CostFooter({
   const total = promptTokens + completionTokens
   return (
     <footer
-      className="mt-6 border-t border-gray-200 pt-4 text-center text-sm text-gray-500"
+      className="mt-6 flex items-center justify-center gap-2 border-t border-[var(--border)] pt-4 text-center text-xs text-[var(--text-faint)]"
       data-testid="cost-footer"
     >
-      This query used{' '}
-      <span className="font-medium text-gray-700">{total.toLocaleString('en-IN')}</span> tokens
-      {costInr != null && (
-        <>
-          {' · approx '}
-          <span className="font-medium text-gray-700">{formatCostInr(costInr)}</span>
-        </>
-      )}
+      <span aria-hidden="true">◆</span>
+      <span>
+        This query used{' '}
+        <span className="font-semibold tabular-nums text-[var(--text-muted)]">
+          {total.toLocaleString('en-IN')}
+        </span>{' '}
+        tokens
+        {costInr != null && (
+          <>
+            {' · approx '}
+            <span className="font-semibold tabular-nums text-[var(--text-muted)]">
+              {formatCostInr(costInr)}
+            </span>
+          </>
+        )}
+      </span>
     </footer>
   )
 }

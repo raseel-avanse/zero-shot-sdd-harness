@@ -22,7 +22,7 @@ _TRANSIENT = (
 
 
 class GeminiProvider:
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    DEFAULT_MODEL = "gemini-flash-latest"
 
     def __init__(self, api_key: str, model: str) -> None:
         self._client = genai.Client(api_key=api_key)

@@ -1,11 +1,13 @@
 import type { ProgressStep } from '@/lib/api'
 
-// Ordered named steps that reflect real backend work (research-progress spec).
-const STEPS: { key: ProgressStep; label: string }[] = [
-  { key: 'searching', label: 'Searching Indian shopping sites…' },
-  { key: 'reviewing', label: 'Reading reviews & cross-checking prices…' },
-  { key: 'ranking', label: 'Ranking deals…' },
-  { key: 'done', label: 'Finishing up…' },
+// Ordered named steps that reflect real backend work. The P2 "assessing" step
+// (deal-quality-flag) sits between ranking and done.
+const STEPS: { key: ProgressStep; label: string; short: string }[] = [
+  { key: 'searching', label: 'Searching Indian shopping sites…', short: 'Search' },
+  { key: 'reviewing', label: 'Reading reviews & cross-checking prices…', short: 'Review' },
+  { key: 'ranking', label: 'Ranking deals…', short: 'Rank' },
+  { key: 'assessing', label: 'Checking deal quality…', short: 'Assess' },
+  { key: 'done', label: 'Finishing up…', short: 'Finish' },
 ]
 
 function stepIndex(step: ProgressStep | null): number {
@@ -21,17 +23,24 @@ export default function ProgressBar({ step }: { step: ProgressStep | null }) {
 
   return (
     <section
-      className="mt-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+      className="ds-animate-in mt-8 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm"
       aria-live="polite"
       aria-busy="true"
       data-testid="progress-area"
     >
-      <p className="mb-4 text-sm font-medium text-gray-800" data-testid="progress-label">
-        {currentLabel}
-      </p>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span
+          aria-hidden="true"
+          className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-[var(--accent)] motion-reduce:animate-none"
+        />
+        <p className="text-sm font-medium text-[var(--text)]" data-testid="progress-label">
+          {currentLabel}
+        </p>
+      </div>
+
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
         <div
-          className="h-full rounded-full bg-blue-600 transition-[width] duration-500 ease-out motion-reduce:transition-none"
+          className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${pct}%` }}
           role="progressbar"
           aria-valuenow={pct}
@@ -40,20 +49,22 @@ export default function ProgressBar({ step }: { step: ProgressStep | null }) {
           aria-label="Research progress"
         />
       </div>
-      <ol className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+
+      <ol className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
         {STEPS.map((s, i) => (
           <li
             key={s.key}
-            className={
+            className={[
+              'flex items-center gap-1.5',
               i < current
-                ? 'text-green-600'
+                ? 'text-[var(--pos-fg)]'
                 : i === current
-                  ? 'font-semibold text-blue-700'
-                  : 'text-gray-400'
-            }
+                  ? 'font-semibold text-[var(--accent)]'
+                  : 'text-[var(--text-faint)]',
+            ].join(' ')}
           >
-            {i < current ? '✓ ' : i === current ? '● ' : '○ '}
-            {s.label.replace('…', '')}
+            <span aria-hidden="true">{i < current ? '✓' : i === current ? '●' : '○'}</span>
+            {s.short}
           </li>
         ))}
       </ol>
