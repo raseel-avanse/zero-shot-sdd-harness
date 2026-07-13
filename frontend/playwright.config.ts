@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 // The app is served by FastAPI at /app. The gate starts the server; these
 // tests hit the live app. Override the base URL with PLAYWRIGHT_BASE_URL.
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8001/app/'
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8003/app/'
 
 export default defineConfig({
   testDir: './tests/e2e',

@@ -83,9 +83,9 @@ Start the server (from the repo root):
 uv run python -m src
 ```
 
-Then open **http://localhost:8001/app/** in a browser.
+Then open **http://localhost:8003/app/** in a browser.
 
-Health check: **http://localhost:8001/health** returns `{"data":{"status":"ok"},"error":null}`.
+Health check: **http://localhost:8003/health** returns `{"data":{"status":"ok"},"error":null}`.
 
 ### Using it
 
