@@ -61,31 +61,34 @@ uv run alembic current
 
 ---
 
-## Frontend build
-
-The Next.js UI is a static export served by FastAPI at `/app`. Build it once (this block runs from the `frontend/` directory):
-
-```bash
-cd frontend
-pnpm install
-pnpm build
-```
-
-Return to the repo root afterward (`cd ..`) before running the server.
-
----
-
 ## Run
 
-Start the server (from the repo root):
+Start Sentinel from the repo root with the run script:
 
 ```bash
-uv run python -m src
+./run.sh
+```
+
+`run.sh` does everything in the right order, every time: starts the Postgres container, applies migrations, **rebuilds the frontend**, and starts the server. Rebuilding on every start is deliberate — `frontend/out/` is a gitignored build artifact, so switching git branches does **not** update it. Without a rebuild you can serve another branch's stale UI (e.g. a build left behind by `dealscout-v0.1`). The script honors `PORT` (default **8003**):
+
+```bash
+PORT=8003 ./run.sh
 ```
 
 Then open **http://localhost:8003/app/** in a browser.
 
 Health check: **http://localhost:8003/health** returns `{"data":{"status":"ok"},"error":null}`.
+
+### Manual run (if you prefer the individual steps)
+
+From the repo root — always rebuild the frontend before starting, for the reason above:
+
+```bash
+docker start sec-agent-pg
+uv run alembic upgrade head
+cd frontend && pnpm install && pnpm build && cd ..
+uv run python -m src
+```
 
 ### Using it
 
