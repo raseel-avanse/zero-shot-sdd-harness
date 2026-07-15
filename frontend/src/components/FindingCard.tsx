@@ -9,6 +9,7 @@ import {
   type FindingStatus,
 } from '@/lib/api'
 import { ConfidenceBadge, Markdown, SeverityBadge, severityKey, severityStyle } from './ui'
+import { owaspRefId } from '@/lib/owasp'
 
 const STATUS_LABELS: FindingStatus[] = ['new', 'validated', 'remediated', 'false_positive']
 
@@ -31,6 +32,8 @@ export function FindingCard({
   const [statusError, setStatusError] = useState<string | null>(null)
 
   const sev = severityStyle(severityKey(finding.severity_label))
+  const owaspRef = finding.owasp_api_ref?.trim() || null
+  const owaspId = owaspRefId(owaspRef)
 
   async function handleStatus(next: FindingStatus) {
     if (next === finding.status || statusUpdating) return
@@ -83,6 +86,16 @@ export function FindingCard({
                   {finding.category}
                 </span>
                 <ConfidenceBadge confidence={finding.confidence} />
+                {owaspRef && (
+                  <span
+                    data-testid="owasp-badge"
+                    title={`OWASP API Security Top 10 (2023): ${owaspRef}`}
+                    data-owasp-id={owaspId ?? undefined}
+                    className="inline-flex items-center gap-1 rounded-md bg-[#eef2ff] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#3730a3] ring-1 ring-[#4f46e5]/30"
+                  >
+                    {owaspRef}
+                  </span>
+                )}
                 {patternLabel && (
                   <span
                     data-testid="pattern-flag"

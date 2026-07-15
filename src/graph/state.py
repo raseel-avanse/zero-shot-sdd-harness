@@ -13,6 +13,8 @@ class AgentState(TypedDict, total=False):
     target_path: str              # repo path OR live-app base URL (target_ref)
     scope_allowlist: list[str]
     non_destructive_only: bool
+    assessment_profile: str       # general | owasp_api (P4) — selects hunt taxonomy
+    api_spec_ref: str | None       # (P4) optional OpenAPI/Swagger URL or file path
 
     # Control / budget
     step_budget: int

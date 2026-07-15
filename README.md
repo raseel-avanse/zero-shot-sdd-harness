@@ -14,7 +14,9 @@ Sentinel is a whitebox information-security agent for a security team. A user cr
 
 **Phase 2 is live:** non-destructive live-app active probing (read-only, in-code host/verb guard against the recorded scope), an interactive chat mode with turn memory to direct follow-up probes, and re-test after remediation (a fixed finding transitions to `remediated`).
 
-**Phase 3 is live:** one-click dossier export (Markdown / PDF / JSON), proactive next-probe suggestions after each run, same-pattern-elsewhere flagging (findings sharing a vulnerability pattern are linked), and full finding status lifecycle (`new → validated → remediated`, plus `false_positive`). This is the final phase — no stubs remain.
+**Phase 3 is live:** one-click dossier export (Markdown / PDF / JSON), proactive next-probe suggestions after each run, same-pattern-elsewhere flagging (findings sharing a vulnerability pattern are linked), and full finding status lifecycle (`new → validated → remediated`, plus `false_positive`).
+
+**Phase 4 is live — OWASP API Security Top 10 (2023):** when creating a `live_app` engagement you can pick the **OWASP API Top 10** assessment profile (optionally supplying an OpenAPI/Swagger source). The agent walks all ten OWASP API categories (API1 BOLA … API10 Unsafe Consumption) non-destructively, tags each finding with its canonical `APIn:2023 — …` reference, and shows an OWASP API Top 10 coverage panel on the run view. The default `general` profile keeps the original live-probing behavior.
 
 ---
 

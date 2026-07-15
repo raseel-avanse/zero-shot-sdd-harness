@@ -19,6 +19,8 @@ A scoped security assessment against one target.
 | name | Text | yes | Human label |
 | target_type | Text enum `repo`\|`live_app` | yes | Phase 1: `repo` only |
 | target_ref | Text | yes | Local repo path (later: base URL) |
+| assessment_profile | Text enum `general`\|`owasp_api` | yes | Default `general`. Phase 4. Selects the live-hunt category taxonomy; only meaningful for `live_app` |
+| api_spec_ref | Text | no | Phase 4. Optional OpenAPI/Swagger source (URL or local file path) for endpoint enumeration; raw spec content is NOT persisted |
 | status | Text enum `draft`\|`active`\|`completed`\|`archived` | yes | Default `draft` |
 | created_at / updated_at | timestamptz | yes | Lifecycle timestamps |
 
@@ -62,7 +64,8 @@ One validated (or unconfirmed) vulnerability finding. Accumulates and persists p
 | id | Text (uuid) | yes | Primary key |
 | engagement_id | Text FK → engagements.id | yes | Owning engagement |
 | run_id | Text FK → assessment_runs.id | yes | Producing run |
-| category | Text enum `injection`\|`broken_auth`\|`secrets_misconfig`\|`vuln_deps` | yes | Vuln class |
+| category | Text | yes | Vuln class machine key. Repo/general: `injection`\|`broken_auth`\|`secrets_misconfig`\|`vuln_deps`. OWASP profile (Phase 4): `api1_bola`…`api10_unsafe_consumption` |
+| owasp_api_ref | Text | no | Phase 4. Canonical OWASP API category ID+title, e.g. `API1:2023 — Broken Object Level Authorization`. Null for non-OWASP findings |
 | title | Text | yes | Short label |
 | severity_label | Text enum `critical`\|`high`\|`medium`\|`low`\|`info` | yes | |
 | cvss_score | numeric(3,1) | no | 0.0–10.0 CVSS-ish |
@@ -102,3 +105,7 @@ Conversation memory for interactive chat over an engagement.
 ## Sensitive Data
 - **RAW SOURCE IS NOT PERSISTED.** Only findings/metadata and bounded code excerpts inside `evidence` are stored. Whole source files never leave the box and are never written to Postgres. Code excerpts MAY be sent to Gemini for analysis.
 - Scope records may name internal hosts/paths — treated as engagement-confidential; not exported outside the dossier.
+- **RAW OpenAPI/Swagger SPEC CONTENT IS NOT PERSISTED (Phase 4).** Only the source reference (`api_spec_ref`) and the derived endpoint list (ephemeral, in run state) are held; only endpoint paths/excerpts that appear in a finding's `location`/`evidence` are stored (bounded excerpts only).
+
+## Migrations
+- Phase 4 adds one additive Alembic migration: `engagements.assessment_profile` (default `general`), `engagements.api_spec_ref` (nullable), and `findings.owasp_api_ref` (nullable). No backfill needed — defaults/nulls apply to existing rows.

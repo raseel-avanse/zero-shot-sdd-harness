@@ -4,6 +4,10 @@
 
 export type TargetType = 'repo' | 'live_app'
 
+// [P4] Assessment profile for live_app engagements. `general` = the existing
+// generic live probing; `owasp_api` = the OWASP API Security Top 10 (2023) walk.
+export type AssessmentProfile = 'general' | 'owasp_api'
+
 export interface EngagementSummary {
   engagement_id: string
   name: string
@@ -21,7 +25,13 @@ export interface ScopeRecord {
 }
 
 export interface EngagementDetail {
-  engagement: EngagementSummary & { target_ref?: string }
+  engagement: EngagementSummary & {
+    target_ref?: string
+    // [P4] Present on live_app engagements once the api-data slice lands.
+    // Absent on older engagements / builds — tolerate undefined.
+    assessment_profile?: AssessmentProfile
+    api_spec_ref?: string | null
+  }
   scope_record: ScopeRecord
 }
 
@@ -33,6 +43,10 @@ export interface CreateEngagementBody {
   rules_of_engagement: string
   authorized_by: string
   non_destructive_only: boolean
+  // [P4] Only meaningful for live_app engagements; the backend ignores them for
+  // repo targets. Optional so pre-P4 backends still accept the payload.
+  assessment_profile?: AssessmentProfile
+  api_spec_ref?: string | null
 }
 
 export interface Finding {
@@ -52,6 +66,10 @@ export interface Finding {
   // [P3] Links same-pattern occurrences across the engagement. May be absent
   // until the proactive-detection backend tags a finding — tolerate null.
   pattern_ref?: string | null
+  // [P4] Canonical OWASP API category id+title, e.g.
+  // "API1:2023 — Broken Object Level Authorization". Present only on
+  // owasp_api-profile findings — tolerate null/absent.
+  owasp_api_ref?: string | null
 }
 
 export type FindingStatus = 'new' | 'validated' | 'remediated' | 'false_positive'

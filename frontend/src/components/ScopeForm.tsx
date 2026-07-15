@@ -1,7 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { ApiError, createEngagement, type TargetType } from '@/lib/api'
+import {
+  ApiError,
+  createEngagement,
+  type AssessmentProfile,
+  type TargetType,
+} from '@/lib/api'
 import { ErrorBanner } from './ui'
 
 export function ScopeForm({
@@ -18,6 +23,8 @@ export function ScopeForm({
   const [roe, setRoe] = useState('')
   const [authorizedBy, setAuthorizedBy] = useState('')
   const [nonDestructive, setNonDestructive] = useState(true)
+  const [profile, setProfile] = useState<AssessmentProfile>('general')
+  const [apiSpecRef, setApiSpecRef] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -62,6 +69,12 @@ export function ScopeForm({
         rules_of_engagement: roe.trim(),
         authorized_by: authorizedBy.trim(),
         non_destructive_only: nonDestructive,
+        // [P4] Only meaningful for live_app; send `general` otherwise so a repo
+        // engagement keeps its existing behaviour. api_spec_ref only when set.
+        assessment_profile: isLive ? profile : 'general',
+        ...(isLive && profile === 'owasp_api' && apiSpecRef.trim()
+          ? { api_spec_ref: apiSpecRef.trim() }
+          : {}),
       })
       onCreated(engagement_id)
     } catch (err) {
@@ -142,6 +155,69 @@ export function ScopeForm({
           (GET / HEAD / OPTIONS) against allowlisted hosts. State-changing requests and out-of-scope
           hosts are refused in code, independent of the model.
         </div>
+      )}
+
+      {isLive && (
+        <fieldset data-testid="profile-select">
+          <legend className={labelCls}>Assessment profile</legend>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Choose the hunt taxonomy for this live-app assessment.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <label
+              data-testid="profile-general"
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                profile === 'general'
+                  ? 'border-primary/40 bg-primary-tint text-ink-strong'
+                  : 'border-strong text-ink-muted'
+              }`}
+            >
+              <input
+                type="radio"
+                name="assessment_profile"
+                checked={profile === 'general'}
+                onChange={() => setProfile('general')}
+              />
+              General probing
+            </label>
+            <label
+              data-testid="profile-owasp"
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                profile === 'owasp_api'
+                  ? 'border-primary/40 bg-primary-tint text-ink-strong'
+                  : 'border-strong text-ink-muted'
+              }`}
+            >
+              <input
+                type="radio"
+                name="assessment_profile"
+                checked={profile === 'owasp_api'}
+                onChange={() => setProfile('owasp_api')}
+              />
+              OWASP API Top 10
+            </label>
+          </div>
+
+          {profile === 'owasp_api' && (
+            <div className="mt-4">
+              <label htmlFor="api-spec-ref" className={labelCls}>
+                OpenAPI / Swagger source
+              </label>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Optional — a URL or local file path. Improves endpoint coverage; leave blank for
+                light base-URL discovery.
+              </p>
+              <input
+                id="api-spec-ref"
+                data-testid="api-spec-input"
+                className={`${inputCls} font-mono`}
+                value={apiSpecRef}
+                onChange={(e) => setApiSpecRef(e.target.value)}
+                placeholder="https://api.example.com/openapi.json  ·  /abs/path/to/openapi.yaml"
+              />
+            </div>
+          )}
+        </fieldset>
       )}
 
       <div>

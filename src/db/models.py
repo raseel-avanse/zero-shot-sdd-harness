@@ -45,6 +45,14 @@ class Engagement(Base):
     # target_type enum: repo | live_app  (Phase 1: repo only)
     target_type: Mapped[str] = mapped_column(Text, nullable=False, default="repo")
     target_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    # assessment_profile enum: general | owasp_api (Phase 4). Selects the
+    # live-hunt category taxonomy; only meaningful for live_app.
+    assessment_profile: Mapped[str] = mapped_column(
+        Text, nullable=True, default="general"
+    )
+    # Optional OpenAPI/Swagger source (URL or local file path) for endpoint
+    # enumeration (Phase 4). Raw spec content is NOT persisted.
+    api_spec_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     # status enum: draft | active | completed | archived
     status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
     created_at: Mapped[datetime] = mapped_column(
@@ -144,6 +152,9 @@ class Finding(Base):
     )
     # category enum: injection | broken_auth | secrets_misconfig | vuln_deps
     category: Mapped[str] = mapped_column(Text, nullable=False)
+    # Canonical OWASP API category ID+title (Phase 4), e.g.
+    # "API1:2023 — Broken Object Level Authorization". Null for non-OWASP findings.
+    owasp_api_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     # severity_label enum: critical | high | medium | low | info
     severity_label: Mapped[str] = mapped_column(Text, nullable=False)

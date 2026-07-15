@@ -18,11 +18,14 @@ REST over FastAPI, served at `http://localhost:8001` (uvicorn `api:app`). All JS
   "authorized_targets": ["/abs/path/to/repo"],
   "rules_of_engagement": "string",
   "authorized_by": "string",
-  "non_destructive_only": true
+  "non_destructive_only": true,
+  "assessment_profile": "general",
+  "api_spec_ref": null
 }
 ```
 **Response:** `ok({ "engagement_id": "uuid", "status": "draft" })`
-**Errors:** 400 missing/invalid fields; 400 `target_type=live_app` ("not yet available" in P1); 500 DB write failure.
+**Errors:** 400 missing/invalid fields; 400 `target_type=live_app` ("not yet available" in P1; enabled P2); 500 DB write failure.
+**[P4]** `assessment_profile` (`general`\|`owasp_api`, default `general`) and optional `api_spec_ref` (OpenAPI/Swagger URL or local file path, or null) are accepted. `assessment_profile=owasp_api` is only meaningful for `target_type=live_app`; a non-`live_app` engagement records it but stays on the repo path. Raw spec content is never persisted — only `api_spec_ref` and derived endpoints (ephemeral).
 
 ### `GET /engagements` [P1]
 **Purpose:** List engagements. **Response:** `ok([{engagement_id, name, target_type, status, created_at}])`.
@@ -45,7 +48,7 @@ REST over FastAPI, served at `http://localhost:8001` (uvicorn `api:app`). All JS
 
 ### `GET /engagements/{id}/findings` [P1]
 **Purpose:** List all findings for an engagement (post-run canonical view — identical to streamed set).
-**Response:** `ok([{ id, category, title, severity_label, cvss_score, location, description, evidence, confidence, status, remediation, suggested_patch, created_at }])`.
+**Response:** `ok([{ id, category, owasp_api_ref, title, severity_label, cvss_score, location, description, evidence, confidence, status, remediation, suggested_patch, pattern_ref, created_at }])`. **[P4]** `owasp_api_ref` carries the canonical `APIn:2023 — …` string for OWASP-profile findings (null otherwise); surfaced by the `FindingOut` model shared by this endpoint and the SSE `finding` event.
 
 ### `GET /runs/{id}/cost` [P1]
 **Purpose:** Token + cost breakdown for a run. **Response:** `ok({ prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, model_rates })`.

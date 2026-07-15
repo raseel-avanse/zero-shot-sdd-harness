@@ -12,6 +12,7 @@ import {
   type Finding,
   type ProgressEvent,
 } from '@/lib/api'
+import { OWASP_API_CATEGORIES, owaspRefId } from '@/lib/owasp'
 import { ChatPanel } from './ChatPanel'
 import { FindingCard } from './FindingCard'
 import {
@@ -184,6 +185,10 @@ export function RunView({
 
   const running = streamState === 'starting' || streamState === 'streaming' || streamState === 'reconnecting'
   const isLive = detail?.engagement.target_type === 'live_app'
+  // [P4] Show the OWASP coverage panel for owasp_api-profile live engagements.
+  // The `assessment_profile` field may be absent on older backends — for a live
+  // engagement, show it unless the profile is explicitly `general`.
+  const showOwaspCoverage = isLive && detail?.engagement.assessment_profile !== 'general'
 
   // Push live run state up to the shell (breadcrumb name + session chips).
   useEffect(() => {
@@ -272,6 +277,8 @@ export function RunView({
 
       <SeveritySummary findings={findings} />
 
+      {showOwaspCoverage && <OwaspCoverage findings={findings} />}
+
       {(running || streamState === 'done' || streamState === 'error') && (
         <ProgressPanel progress={progress} state={streamState} />
       )}
@@ -357,6 +364,65 @@ function SeveritySummary({ findings }: { findings: Finding[] }) {
           </div>
         </>
       )}
+    </Card>
+  )
+}
+
+/**
+ * [P4] Compact OWASP API Security Top 10 (2023) coverage panel. Lists all ten
+ * canonical categories and marks which produced findings in this run, derived
+ * client-side from the findings already in state (no new endpoint). Tolerates
+ * findings without an `owasp_api_ref` — they simply don't count toward coverage.
+ */
+function OwaspCoverage({ findings }: { findings: Finding[] }) {
+  const counts = new Map<string, number>()
+  for (const f of findings) {
+    const id = owaspRefId(f.owasp_api_ref)
+    if (id) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  const covered = OWASP_API_CATEGORIES.filter((c) => (counts.get(c.id) ?? 0) > 0).length
+
+  return (
+    <Card data-testid="owasp-coverage" className="p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">
+          OWASP API Top 10 coverage
+        </h3>
+        <span className="font-mono text-xs text-ink-muted" data-testid="owasp-coverage-count">
+          {covered} / {OWASP_API_CATEGORIES.length} with findings
+        </span>
+      </div>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {OWASP_API_CATEGORIES.map((c) => {
+          const n = counts.get(c.id) ?? 0
+          const hit = n > 0
+          return (
+            <li
+              key={c.id}
+              data-testid="owasp-coverage-row"
+              data-owasp-id={c.id}
+              data-hit={hit ? 'true' : 'false'}
+              className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ring-1 ${
+                hit
+                  ? 'bg-[#eef2ff] text-[#3730a3] ring-[#4f46e5]/30'
+                  : 'bg-canvas text-ink-muted ring-hairline'
+              }`}
+            >
+              <span className="min-w-0 truncate">
+                <span className="font-mono font-semibold">{c.id}</span>
+                <span className="ml-1.5 font-normal">{c.title}</span>
+              </span>
+              <span
+                className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                  hit ? 'bg-[#4f46e5] text-white' : 'text-ink-muted ring-1 ring-hairline'
+                }`}
+              >
+                {hit ? n : '—'}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
     </Card>
   )
 }

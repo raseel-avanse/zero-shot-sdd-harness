@@ -24,7 +24,7 @@ from llm import cost as cost_mod
 from llm.client import LLMClient
 from tools import http_probe
 from tools import manifest as manifest_tool
-from tools import repo_walk, scope_guard
+from tools import openapi_ingest, repo_walk, scope_guard
 from tools.read_excerpt import read_excerpt
 from tools.sandbox import sandbox_run
 
@@ -34,6 +34,50 @@ _PROMPT_DIR = Path(__file__).parent.parent / "prompts"
 
 # The four supported vulnerability classes (spec/data.md Finding.category).
 _CATEGORIES = ["injection", "broken_auth", "secrets_misconfig", "vuln_deps"]
+
+# OWASP API Security Top 10 (2023) taxonomy (Phase 4). Ordered machine keys
+# mapped to their canonical `APIn:2023 — Title` display refs. When an
+# engagement's assessment_profile is "owasp_api", the live path hunts these ten
+# categories (in place of the four generic classes) and tags each finding with
+# both the machine key (`category`) and the canonical ref (`owasp_api_ref`).
+_OWASP_API_TAXONOMY: dict[str, str] = {
+    "api1_bola": "API1:2023 — Broken Object Level Authorization",
+    "api2_broken_auth": "API2:2023 — Broken Authentication",
+    "api3_bopla": "API3:2023 — Broken Object Property Level Authorization",
+    "api4_resource_consumption": "API4:2023 — Unrestricted Resource Consumption",
+    "api5_bfla": "API5:2023 — Broken Function Level Authorization",
+    "api6_sensitive_flows": "API6:2023 — Unrestricted Access to Sensitive Business Flows",
+    "api7_ssrf": "API7:2023 — Server Side Request Forgery",
+    "api8_misconfig": "API8:2023 — Security Misconfiguration",
+    "api9_inventory": "API9:2023 — Improper Inventory Management",
+    "api10_unsafe_consumption": "API10:2023 — Unsafe Consumption of APIs",
+}
+_OWASP_API_KEYS = list(_OWASP_API_TAXONOMY.keys())
+
+_OWASP_API_PROFILE = "owasp_api"
+
+
+def owasp_api_ref(category_key: str) -> str | None:
+    """Map an OWASP API category machine key -> its canonical `APIn:2023 — …` ref.
+
+    Returns None for any non-OWASP-API category (e.g. the generic classes).
+    """
+    return _OWASP_API_TAXONOMY.get(category_key)
+
+
+def _categories_for_profile(profile: str | None) -> list[str]:
+    """The hunt taxonomy for a profile: OWASP-API ten vs the four generic."""
+    if profile == _OWASP_API_PROFILE:
+        return list(_OWASP_API_KEYS)
+    return list(_CATEGORIES)
+
+
+def _prioritize_prompt(profile: str | None) -> str:
+    return "owasp_api_prioritize.md" if profile == _OWASP_API_PROFILE else "prioritize.md"
+
+
+def _hunt_prompt(profile: str | None) -> str:
+    return "owasp_api_hunt.md" if profile == _OWASP_API_PROFILE else "hunt.md"
 
 # Bound how much source we feed the hunt LLM per category (cost + prompt size).
 _MAX_HUNT_FILES = 8
@@ -202,17 +246,20 @@ def prioritize(state: AgentState) -> AgentState:
     """LLM (fast) ranking of the four vuln categories to hunt."""
     step = int(state.get("step_count", 0)) + 1
     recon_data = state.get("recon", {})
+    profile = state.get("assessment_profile", "general")
+    categories = _categories_for_profile(profile)
     try:
         usage = LLMClient().complete(
             f"Recon summary (JSON):\n{json.dumps(recon_data)[:12000]}",
-            system=_load_prompt("prioritize.md"),
+            system=_load_prompt(_prioritize_prompt(profile)),
             tier="fast",
         )
         parsed = _parse_json(usage.get("text", ""))
         priorities = parsed.get("priorities", []) if isinstance(parsed, dict) else []
-        # Keep only known categories; fall back to the full set if empty/garbage.
-        priorities = [c for c in priorities if c in _CATEGORIES]
-        for cat in _CATEGORIES:
+        # Keep only known categories for this profile; append any the model
+        # omitted so the full taxonomy is always covered (garbage falls through).
+        priorities = [c for c in priorities if c in categories]
+        for cat in categories:
             if cat not in priorities:
                 priorities.append(cat)
 
@@ -303,6 +350,8 @@ def live_recon(state: AgentState) -> AgentState:
     step = int(state.get("step_count", 0)) + 1
     base = state.get("target_path", "")
     allowlist = state.get("scope_allowlist", []) or []
+    profile = state.get("assessment_profile", "general")
+    api_spec_ref = state.get("api_spec_ref")
     try:
         probes: list[dict] = []
         with http_probe.Prober(allowlist) as prober:
@@ -322,14 +371,38 @@ def live_recon(state: AgentState) -> AgentState:
                 except httpx.HTTPError:
                     continue
 
+        endpoints = [p["url"] for p in probes]
+
         inventory: dict = {
             "target_type": "live_app",
             "base_url": base,
             "probes": probes,
             # `endpoints` mirrors repo recon's `files` so the shared hunt/live
             # paths and prioritize can consume a consistent recon shape.
-            "endpoints": [p["url"] for p in probes],
+            "endpoints": endpoints,
         }
+
+        # (P4) OWASP-API profile: if an OpenAPI/Swagger source was supplied,
+        # enumerate its documented endpoints (URL host-guarded like any probe,
+        # or a local file) and feed them into the walk. Only the derived endpoint
+        # list is kept — raw spec content is discarded. On any failure this is an
+        # empty list and we fall back to the light base-URL discovery above.
+        if profile == _OWASP_API_PROFILE and api_spec_ref:
+            spec_endpoints = openapi_ingest.load(api_spec_ref, allowlist)
+            if spec_endpoints:
+                inventory["spec_endpoints"] = spec_endpoints
+                spec_urls = [
+                    _join_url(base, ep.get("path", "/"))
+                    for ep in spec_endpoints
+                    if isinstance(ep, dict)
+                ]
+                # De-duplicate while preserving order; documented endpoints lead.
+                merged: list[str] = []
+                for url in spec_urls + endpoints:
+                    if url not in merged:
+                        merged.append(url)
+                inventory["endpoints"] = merged
+                inventory["hotspot_endpoints"] = spec_urls[:_MAX_LIVE_HUNT_PROBES]
 
         usage = LLMClient().complete(
             f"Live-app probe metadata (JSON):\n{json.dumps(inventory)[:20000]}",
@@ -340,7 +413,10 @@ def live_recon(state: AgentState) -> AgentState:
         if isinstance(parsed, dict):
             inventory["summary"] = parsed.get("summary", "")
             inventory["frameworks"] = parsed.get("frameworks", [])
-            inventory["hotspot_endpoints"] = parsed.get("hotspot_endpoints", [])
+            # Don't clobber spec-derived hotspots with an empty model list.
+            parsed_hotspots = parsed.get("hotspot_endpoints") or []
+            if parsed_hotspots or not inventory.get("hotspot_endpoints"):
+                inventory["hotspot_endpoints"] = parsed_hotspots
 
         update = {
             "recon": inventory,
@@ -371,6 +447,7 @@ def live_hunt(state: AgentState) -> AgentState:
     recon_data = state.get("recon", {})
     base = state.get("target_path", "")
     allowlist = state.get("scope_allowlist", []) or []
+    profile = state.get("assessment_profile", "general")
     candidates = list(state.get("candidate_findings", []))
 
     try:
@@ -395,14 +472,17 @@ def live_hunt(state: AgentState) -> AgentState:
         usage = LLMClient().complete(
             f"Category: {category}\n\nLive probe observations (JSON):\n"
             f"{json.dumps(observations)[:60000]}",
-            system=_load_prompt("hunt.md"),
+            system=_load_prompt(_hunt_prompt(profile)),
             tier="fast",
         )
         parsed = _parse_json(usage.get("text", ""))
         found = parsed.get("candidates", []) if isinstance(parsed, dict) else []
+        ref = owasp_api_ref(category)  # canonical APIn:2023 ref (None if generic)
         for cand in found:
             if isinstance(cand, dict):
                 cand["category"] = category
+                if ref:
+                    cand["owasp_api_ref"] = ref
                 cand.setdefault("location", observations[0]["url"] if observations else base)
                 candidates.append(cand)
 
@@ -466,8 +546,12 @@ def validate(state: AgentState) -> AgentState:
                     if confidence == "confirmed":
                         confidence = "tentative"
 
+            cat = cand.get("category", "injection")
             finding = {
-                "category": cand.get("category", "injection"),
+                "category": cat,
+                # (P4) Canonical OWASP-API ref: prefer the tag the hunt set,
+                # else derive from the category key (None for generic classes).
+                "owasp_api_ref": cand.get("owasp_api_ref") or owasp_api_ref(cat),
                 "title": parsed.get("title") or cand.get("title", "Untitled finding"),
                 "severity_label": parsed.get("severity_label")
                 or cand.get("severity_label", "info"),
@@ -518,23 +602,28 @@ def _persist_finding(state: AgentState, finding: dict) -> None:
     except (TypeError, ValueError):
         cvss = None
     with create_db_session() as session:
-        session.add(
-            Finding(
-                engagement_id=engagement_id,
-                run_id=run_id,
-                category=finding.get("category", "injection"),
-                title=finding.get("title", "Untitled finding"),
-                severity_label=finding.get("severity_label", "info"),
-                cvss_score=cvss,
-                location=finding.get("location", "unknown"),
-                description=finding.get("description", ""),
-                evidence=finding.get("evidence", ""),
-                confidence=finding.get("confidence", "unconfirmed"),
-                status="validated",
-                remediation=finding.get("remediation", "See description."),
-                suggested_patch=finding.get("suggested_patch"),
-            )
+        row = Finding(
+            engagement_id=engagement_id,
+            run_id=run_id,
+            category=finding.get("category", "injection"),
+            title=finding.get("title", "Untitled finding"),
+            severity_label=finding.get("severity_label", "info"),
+            cvss_score=cvss,
+            location=finding.get("location", "unknown"),
+            description=finding.get("description", ""),
+            evidence=finding.get("evidence", ""),
+            confidence=finding.get("confidence", "unconfirmed"),
+            status="validated",
+            remediation=finding.get("remediation", "See description."),
+            suggested_patch=finding.get("suggested_patch"),
         )
+        # (P4) Tag the canonical OWASP-API ref when present. The column is added
+        # by the api-data slice's migration; guard so this graph slice does not
+        # hard-fail if it runs before that column exists.
+        api_ref = finding.get("owasp_api_ref")
+        if api_ref is not None and hasattr(row, "owasp_api_ref"):
+            row.owasp_api_ref = api_ref
+        session.add(row)
 
 
 # --------------------------------------------------------------------------- #

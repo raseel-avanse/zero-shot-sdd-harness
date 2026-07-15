@@ -37,6 +37,10 @@ def _build_initial_state(run: AssessmentRun, engagement: Engagement) -> AgentSta
         "target_path": engagement.target_ref,
         "scope_allowlist": allowlist,
         "non_destructive_only": non_destructive,
+        # (P4) Read the OWASP-API profile fields defensively so this graph slice
+        # does not hard-depend on the api-data migration having landed first.
+        "assessment_profile": getattr(engagement, "assessment_profile", "general") or "general",
+        "api_spec_ref": getattr(engagement, "api_spec_ref", None),
         "step_budget": int(run.step_budget or 0),
         "step_count": 0,
         "status": "running",

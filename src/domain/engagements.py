@@ -14,6 +14,10 @@ class CreateEngagementRequest(BaseModel):
     rules_of_engagement: str = Field(min_length=1)
     authorized_by: str = Field(min_length=1)
     non_destructive_only: bool = True
+    # Phase 4: live-hunt category taxonomy selector (general | owasp_api).
+    assessment_profile: str = "general"
+    # Phase 4: optional OpenAPI/Swagger source (URL or local file path).
+    api_spec_ref: str | None = None
 
 
 class CreateEngagementResponse(BaseModel):
@@ -27,6 +31,8 @@ class EngagementListItem(BaseModel):
     target_type: str
     status: str
     created_at: datetime
+    assessment_profile: str = "general"
+    api_spec_ref: str | None = None
 
 
 class ScopeRecordOut(BaseModel):
@@ -47,6 +53,8 @@ class EngagementOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    assessment_profile: str = "general"
+    api_spec_ref: str | None = None
 
 
 class EngagementDetail(BaseModel):

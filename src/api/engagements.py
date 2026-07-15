@@ -44,11 +44,20 @@ def create_engagement(
     if req.target_type not in ("repo", "live_app"):
         raise api_error("INVALID_TARGET", f"unknown target_type: {req.target_type}", 400)
 
+    if req.assessment_profile not in ("general", "owasp_api"):
+        raise api_error(
+            "INVALID_PROFILE",
+            f"unknown assessment_profile: {req.assessment_profile}",
+            400,
+        )
+
     try:
         engagement = Engagement(
             name=req.name,
             target_type=req.target_type,
             target_ref=req.target_ref,
+            assessment_profile=req.assessment_profile,
+            api_spec_ref=req.api_spec_ref,
             status="draft",
         )
         scope = ScopeRecord(
@@ -81,6 +90,8 @@ def list_engagements(session: Session = Depends(get_session)) -> dict:
             target_type=e.target_type,
             status=e.status,
             created_at=e.created_at,
+            assessment_profile=e.assessment_profile or "general",
+            api_spec_ref=e.api_spec_ref,
         ).model_dump()
         for e in rows
     ]
@@ -101,6 +112,8 @@ def get_engagement(engagement_id: str, session: Session = Depends(get_session)) 
             status=engagement.status,
             created_at=engagement.created_at,
             updated_at=engagement.updated_at,
+            assessment_profile=engagement.assessment_profile or "general",
+            api_spec_ref=engagement.api_spec_ref,
         ),
         scope_record=_scope_out(engagement.scope_record)
         if engagement.scope_record
@@ -125,6 +138,7 @@ def list_findings(engagement_id: str, session: Session = Depends(get_session)) -
             engagement_id=f.engagement_id,
             run_id=f.run_id,
             category=f.category,
+            owasp_api_ref=f.owasp_api_ref,
             title=f.title,
             severity_label=f.severity_label,
             cvss_score=float(f.cvss_score) if f.cvss_score is not None else None,

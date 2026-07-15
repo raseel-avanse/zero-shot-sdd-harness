@@ -11,6 +11,7 @@ class FindingOut(BaseModel):
     engagement_id: str
     run_id: str
     category: str
+    owasp_api_ref: str | None = None
     title: str
     severity_label: str
     cvss_score: float | None = None

@@ -34,6 +34,7 @@ Deterministic, in-code tools (not LLM-freeform) invoked by nodes:
 | Tool name | Description | Inputs | Output | Side-effects |
 |-----------|-------------|--------|--------|--------------|
 | `scope_guard.check(target)` | In-code allowlist containment check | target path/host, allowlist | allow/refuse | none (pure) |
+| `openapi_ingest.load(ref, allowlist)` | (P4) Fetch/read + parse an OpenAPI/Swagger spec (URL host-guarded, or local file) → derived endpoint list | spec ref, allowlist | list of {path, method, params} | HTTP GET (guarded) or file read; raw spec NOT persisted |
 | `repo_walk(path)` | Read-only scoped file inventory + manifest detection | scoped path | file list, languages, manifest paths | filesystem read only |
 | `read_excerpt(file, span)` | Read a bounded code excerpt (never whole file persisted) | file, line span | excerpt string | filesystem read only |
 | `parse_manifest(path)` | Extract deps for CVE matching | manifest path | dep list w/ versions | filesystem read only |
@@ -55,9 +56,12 @@ class AgentState(TypedDict, total=False):
     engagement_id: str                # set at init
 
     # Input (from engagement + scope_record)
-    target_path: str                  # repo path
+    target_type: str                  # repo | live_app
+    target_path: str                  # repo path OR live-app base URL
     scope_allowlist: list[str]        # in-code enforced allowlist
     non_destructive_only: bool
+    assessment_profile: str           # (P4) general | owasp_api — selects hunt taxonomy
+    api_spec_ref: str | None          # (P4) optional OpenAPI/Swagger URL or file path
 
     # Control / budget
     step_budget: int                  # bounded (default AGENT_STEP_BUDGET=40)
@@ -152,6 +156,22 @@ report ──► END
 | validate | otherwise | report |
 
 ---
+
+## Assessment Profiles — OWASP API Top 10 (Phase 4)
+
+The live-app path (`live_recon → prioritize → live_hunt → validate → report`) is **profile-driven**; the graph topology and routing (`route_after_scope`/`route_after_prioritize`/`route_after_live_hunt`) are UNCHANGED. `assessment_profile` (from the engagement, carried in state) selects the category taxonomy and prompts inside the existing live nodes:
+
+| Profile | Hunt taxonomy | Hunt prompt |
+|---------|--------------|-------------|
+| `general` (default) | the four generic classes (`injection`, `broken_auth`, `secrets_misconfig`, `vuln_deps`) | `hunt.md` (unchanged) |
+| `owasp_api` | the ten OWASP API Top 10 (2023) categories (`api1_bola`…`api10_unsafe_consumption`) | per-category `src/prompts/owasp_api_hunt.md` (category injected) + `src/prompts/owasp_api_prioritize.md` for ranking |
+
+- **`live_recon`:** when `assessment_profile=owasp_api` AND `api_spec_ref` is set, calls `openapi_ingest.load(api_spec_ref, allowlist)` to enumerate documented endpoints into `recon.endpoints` (and `hotspot_endpoints`); otherwise unchanged light base-URL discovery. Raw spec content is discarded after endpoint extraction.
+- **`prioritize`:** ranks the OWASP category set (via `owasp_api_prioritize.md`) instead of the four generic classes; the category constant set is selected by profile. Unknown/garbage categories fall back to the full ordered ten.
+- **`live_hunt`:** unchanged control flow (loops per category, bounded by `step_budget`, only GET/HEAD/OPTIONS via `http_probe.Prober`). Per category it uses safe, read-only, evidence-gathering probes as described in `spec/capabilities/owasp-api-top10.md` (API4 = missing-rate-limit/pagination signal check only, never a flood; BOLA/BFLA/auth = with/without-credential comparisons on GET endpoints; SSRF = documented-parameter inspection). Each candidate is tagged with `category` (machine key) and `owasp_api_ref` (canonical `APIn:2023 — …`).
+- **`validate` / `report`:** unchanged; the `owasp_api_ref` tag is carried onto the persisted Finding and streamed. Same-pattern grouping keys on `category` as today (OWASP keys group naturally).
+
+The OWASP category set stays within the existing `step_budget` — the ten categories loop the same way the four do; budget exhaustion routes to `validate` early exactly as in Phase 1/2.
 
 ## Memory & Context
 

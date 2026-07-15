@@ -18,6 +18,7 @@ Web dashboard — Next.js 15 (App Router) static export in `frontend/`, built wi
 **Purpose:** Capture authorized target + rules-of-engagement BEFORE any assessment.
 **Key elements:** name; target_type selector (only `repo` enabled — `live_app` visibly disabled with a "coming soon" badge); target_ref (repo path); authorized_targets (allowlist, add/remove rows); rules_of_engagement textarea; authorized_by; non_destructive_only toggle (default on).
 **Actions:** Submit → `POST /engagements`. Validation errors shown inline.
+**[P4] OWASP profile controls** (shown only when `target_type=live_app` is chosen): an **assessment profile** selector (`General` \| `OWASP API Top 10`, default General) and, when `OWASP API Top 10` is selected, an optional **OpenAPI/Swagger source** input (URL or local file path; blank = light discovery). These map to `assessment_profile` / `api_spec_ref` on `POST /engagements`.
 
 ### Screen: Run View [P1 real]
 **Purpose:** Launch and watch an assessment stream.
@@ -25,7 +26,8 @@ Web dashboard — Next.js 15 (App Router) static export in `frontend/`, built wi
 - "Start Assessment" button → `POST /engagements/{id}/runs`.
 - **Step counter** `step_count / step_budget` + **current phase** + **current category** (live from SSE `progress`).
 - **Token/cost panel** — prompt/completion/total tokens + estimated cost USD (live).
-- **Finding cards list** — streams in as findings validate: severity badge + CVSS, category, `file:line` location, evidence/PoC block, remediation, and a suggested patch shown as a diff. Confidence badge (confirmed/tentative/unconfirmed).
+- **Finding cards list** — streams in as findings validate: severity badge + CVSS, category, `file:line` location, evidence/PoC block, remediation, and a suggested patch shown as a diff. Confidence badge (confirmed/tentative/unconfirmed). **[P4]** when `owasp_api_ref` is present, an **OWASP API category badge** (e.g. `API1:2023 — Broken Object Level Authorization`) is shown on the card.
+- **[P4] OWASP API Top 10 coverage** — for an `owasp_api`-profile run, a compact ten-row panel showing each OWASP API category and its finding count (derived client-side from `GET /engagements/{id}/findings`), so the user sees which categories produced findings.
 **Actions:** start run; watch stream; a finished run's findings load from `GET /engagements/{id}/findings`.
 
 ### Screen: Labelled Stubs [P1 non-functional, clearly marked]

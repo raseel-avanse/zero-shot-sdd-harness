@@ -42,6 +42,7 @@ def _finding_out(f: Finding) -> dict:
         engagement_id=f.engagement_id,
         run_id=f.run_id,
         category=f.category,
+        owasp_api_ref=f.owasp_api_ref,
         title=f.title,
         severity_label=f.severity_label,
         cvss_score=float(f.cvss_score) if f.cvss_score is not None else None,

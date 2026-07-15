@@ -51,6 +51,37 @@ test('live-app target type is selectable and shows the non-destructive notice (P
   await expect(page.getByText(/must start with http/i)).toBeVisible()
 })
 
+// ── Phase 4 UI surfaces ─────────────────────────────────────────────────────
+// The assessment-profile selector appears only for live-app targets, and
+// choosing "OWASP API Top 10" reveals the optional OpenAPI/Swagger source input.
+
+test('[P4] assessment profile selector appears for live-app and reveals the OpenAPI input', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await page.getByTestId('new-engagement').click()
+
+  // Repo target: no profile selector.
+  await expect(page.getByTestId('profile-select')).toHaveCount(0)
+
+  // Switch to live-app → the profile selector appears, defaulting to General.
+  await page.getByTestId('target-type-live').click()
+  await expect(page.getByTestId('profile-select')).toBeVisible()
+  await expect(page.getByTestId('profile-general')).toBeVisible()
+  await expect(page.getByTestId('profile-owasp')).toBeVisible()
+
+  // The optional OpenAPI input is hidden until OWASP is chosen.
+  await expect(page.getByTestId('api-spec-input')).toHaveCount(0)
+
+  // Choosing OWASP API Top 10 reveals the optional OpenAPI/Swagger source input.
+  await page.getByTestId('profile-owasp').click()
+  await expect(page.getByTestId('api-spec-input')).toBeVisible()
+
+  // Switching back to General hides it again.
+  await page.getByTestId('profile-general').click()
+  await expect(page.getByTestId('api-spec-input')).toHaveCount(0)
+})
+
 test('allowlist rows can be added and removed', async ({ page }) => {
   await page.goto('./')
   await page.getByTestId('new-engagement').click()
@@ -132,4 +163,35 @@ test('finding status lifecycle controls appear on a real finding card', async ({
   await expect(firstCard.getByTestId('finding-status-active')).toContainText('false positive', {
     timeout: 30_000,
   })
+})
+
+// ── Phase 4: OWASP coverage panel on the run view ───────────────────────────
+// Create a live-app engagement under the OWASP API Top 10 profile, land on the
+// run view WITHOUT starting a run, and assert the compact coverage panel renders
+// its ten canonical categories (empty until findings arrive — never crashes).
+
+const TARGET_HOST = process.env.E2E_TARGET_HOST ?? 'http://localhost:9'
+
+test('[P4] OWASP API Top 10 coverage panel renders on an owasp_api run view', async ({ page }) => {
+  await page.goto('./')
+  await page.getByTestId('new-engagement').click()
+
+  await page.getByLabel('Engagement name').fill(`P4 OWASP UI ${Date.now()}`)
+  await page.getByTestId('target-type-live').click()
+  await page.getByTestId('profile-owasp').click()
+  await expect(page.getByTestId('api-spec-input')).toBeVisible()
+
+  await page.getByLabel('Target base URL').fill(TARGET_HOST)
+  await page.getByLabel('Authorized target 1').fill(TARGET_HOST)
+  await page.getByLabel('Rules of engagement').fill('Authorized non-destructive OWASP API assessment.')
+  await page.getByLabel('Authorized by').fill('e2e-runner')
+  await page.getByRole('button', { name: 'Create engagement' }).click()
+
+  await expect(page.getByTestId('start-assessment')).toBeVisible({ timeout: 30_000 })
+
+  const coverage = page.getByTestId('owasp-coverage')
+  await expect(coverage).toBeVisible()
+  await expect(coverage.getByTestId('owasp-coverage-row')).toHaveCount(10)
+  // Empty-state before any run: nothing marked as hit, panel does not crash.
+  await expect(coverage.getByTestId('owasp-coverage-count')).toContainText('0 / 10')
 })

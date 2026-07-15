@@ -10,8 +10,9 @@
 | Repository code review with streamed validated finding cards | 1 | [repo-code-review.md](repo-code-review.md) |
 | Live-app probing, interactive chat, and re-test after remediation | 2 | [live-probing-chat-retest.md](live-probing-chat-retest.md) |
 | Export, proactive suggestions, and finding lifecycle | 3 | [export-proactive-lifecycle.md](export-proactive-lifecycle.md) |
+| OWASP API Security Top 10 (2023) assessment profile | 4 | [owasp-api-top10.md](owasp-api-top10.md) |
 
-> **Scoping note:** Phase 1 delivers the two capabilities that form the smallest first-time-right win (scope-gated engagement + repo code review). Capabilities 3 and 4 each bundle three distinct user-facing sub-features (see their files), so each later requirements phase is a coherent multi-feature user story. Total product cap held to 4 capability files per the ruthless-MVP rule.
+> **Scoping note:** Phase 1 delivers the two capabilities that form the smallest first-time-right win (scope-gated engagement + repo code review). Capabilities 3 and 4 each bundle three distinct user-facing sub-features (see their files). Capability 5 (Phase 4) is a single focused addition — a structured OWASP API Top 10 assessment profile — layered on the existing Phase 2 non-destructive live path; it adds one new user-facing choice (the profile) plus richer, standards-mapped findings rather than three separate features.
 
 ## How to Add a New Capability
 
