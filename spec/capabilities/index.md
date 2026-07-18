@@ -1,38 +1,15 @@
 # Capabilities Index
 
-> **Boilerplate status:** The spec-writer sub-agent creates one file per capability in this directory. Each file describes exactly one discrete thing the agent can do.
+One file per discrete thing DealScout can do.
 
----
+## Phase 1 — Product-name research → ranked deals
+- [product-name-search](product-name-search.md) — deep grounded research from a product name.
+- [ranked-deal-list](ranked-deal-list.md) — structured ranked list of 3–5 deals with reasons.
+- [research-progress](research-progress.md) — named-step progress during the run.
+- [cost-report](cost-report.md) — tokens + estimated INR cost per query.
 
-## What Is a Capability?
-
-A capability is a single, discrete action or behavior the agent performs. Examples:
-- "Search the web for companies matching criteria X"
-- "Draft a personalized email given a lead profile"
-- "Send a Slack notification when a threshold is crossed"
-
-## Capabilities in This Project
-
-<!-- FILL IN: List capabilities here as they are defined. Each entry links to its spec file (no number prefix). -->
-
-| Capability | File |
-|-----------|------|
-| <!-- name --> | [name.md](name.md) |
-
-## How to Add a New Capability
-
-Run `/zero-shot-build [description]` on the existing spec. The spec-writer sub-agent will:
-1. Create a new file in this directory (`<name>.md`, no number prefix)
-2. Update this index
-3. Flag any dependencies on existing capabilities
-4. Self-review that it fits the architecture and data model before returning
-
-## Capability File Template
-
-Each capability file should answer:
-- **What it does** (one sentence)
-- **Inputs** (what data it receives)
-- **Outputs** (what it produces)
-- **External calls** (APIs, LLMs, databases it touches)
-- **Error cases** (what can go wrong and how it's handled)
-- **Success criteria** (how we test it)
+## Phase 2 — More input modes + smarter judgment
+- [url-input-research](url-input-research.md) — research/rank around a pasted product URL.
+- [category-exploration](category-exploration.md) — surface best deals for a category.
+- [clarifying-question-gate](clarifying-question-gate.md) — pause and ask ONE question when ambiguous.
+- [deal-quality-flag](deal-quality-flag.md) — flag whether a discount is genuine / a good time to buy.

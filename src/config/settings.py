@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./data/agent.db")
     log_level: str = Field(default="INFO")
 
+    # Cost estimation — INR per 1000 tokens (prompt + completion combined).
+    cost_inr_per_1k_tokens: float = Field(default=1.5)
+
     # LLM provider — auto-detected from whichever key is set if left blank
     llm_provider: str = Field(default="")   # "anthropic" | "gemini"
     llm_model: str = Field(default="")      # uses provider default when blank

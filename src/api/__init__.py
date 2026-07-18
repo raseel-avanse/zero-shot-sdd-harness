@@ -7,7 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from config.settings import get_settings
+    from observability.events import configure_logging
     from db.session import init_db
+
+    configure_logging(get_settings().log_level)
     init_db()
     yield
 
